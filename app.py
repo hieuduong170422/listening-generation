@@ -44,12 +44,41 @@ def _slug(text: str, max_len: int = 40) -> str:
     return text[:max_len].strip("-") or "untitled"
 
 
+def _read_secret(key: str) -> str:
+    try:
+        value = st.secrets.get(key)
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    return os.getenv(key, "")
+
+
 def _get_client() -> genai.Client:
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = _read_secret("GEMINI_API_KEY")
     if not api_key:
-        st.error("Thiếu GEMINI_API_KEY trong .env")
+        st.error("Thiếu GEMINI_API_KEY (kiểm tra .env hoặc Streamlit secrets).")
         st.stop()
     return genai.Client(api_key=api_key)
+
+
+def _check_auth() -> bool:
+    expected = _read_secret("APP_PASSWORD")
+    if not expected:
+        return True
+    if st.session_state.get("_authed"):
+        return True
+
+    st.title("🔐 TTS Script Gen — Audivy")
+    st.caption("Nhập password để truy cập.")
+    pwd = st.text_input("Password", type="password", key="_login_pwd")
+    if st.button("Đăng nhập", type="primary"):
+        if pwd == expected:
+            st.session_state["_authed"] = True
+            st.rerun()
+        else:
+            st.error("Sai password.")
+    return False
 
 
 def _init_state() -> None:
@@ -535,6 +564,8 @@ def _step_parts(client: genai.Client, cfg: dict) -> None:
 def main() -> None:
     st.set_page_config(page_title="TTS Script Gen", layout="wide")
     _init_state()
+    if not _check_auth():
+        return
     st.title("🎙️ TTS Script Gen — Long-form Podcast Builder")
     cfg = _sidebar()
     client = _get_client()
