@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+history/*.wav
+history/*.txt
+history/*.srt
+history/*.json
+!history/.gitkeep
+.DS_Store
