@@ -11,19 +11,68 @@ TEXT_MODEL_OPTIONS = [
 
 AUDIENCE_LEVELS: dict[str, str] = {
     "beginner": (
-        "Beginner English learners (A2-B1). Use simple, common vocabulary and short sentences. "
+        "Beginner-level language learners (A2-B1). Use simple, common vocabulary and short sentences. "
         "Briefly explain any uncommon word with a quick everyday example."
     ),
     "intermediate": (
-        "Intermediate English learners (B1-B2). Use natural conversational vocabulary. "
+        "Intermediate-level language learners (B1-B2). Use natural conversational vocabulary. "
         "When you use a useful phrase or idiom, briefly explain it once with a short example."
     ),
     "advanced": (
-        "Advanced English learners (B2-C1). Rich vocabulary, idioms welcome, faster register. "
+        "Advanced-level language learners (B2-C1). Rich vocabulary, idioms welcome, faster register. "
         "Still keep enunciation clear and pacing comfortable."
     ),
 }
 DEFAULT_AUDIENCE = "intermediate"
+
+LANGUAGES: dict[str, dict[str, str]] = {
+    "en": {
+        "label": "English",
+        "native": "English",
+        "instruction": "natural conversational English. Use everyday vocabulary that learners can follow.",
+    },
+    "zh": {
+        "label": "Chinese (Mandarin, Simplified)",
+        "native": "中文(简体)",
+        "instruction": "natural Mandarin Chinese in Simplified script (简体中文). Use everyday spoken Mandarin a learner can follow. Do NOT mix in English words.",
+    },
+    "zh_tw": {
+        "label": "Chinese (Traditional)",
+        "native": "繁體中文",
+        "instruction": "natural Mandarin Chinese in Traditional script (繁體中文). Use everyday spoken Mandarin a learner can follow. Do NOT mix in English words.",
+    },
+    "vi": {
+        "label": "Vietnamese",
+        "native": "Tiếng Việt",
+        "instruction": "natural conversational Vietnamese. Use everyday vocabulary a learner can follow.",
+    },
+    "ja": {
+        "label": "Japanese",
+        "native": "日本語",
+        "instruction": "natural conversational Japanese. Use everyday Japanese a learner can follow. Mix kanji/hiragana/katakana naturally as a native would.",
+    },
+    "ko": {
+        "label": "Korean",
+        "native": "한국어",
+        "instruction": "natural conversational Korean. Use everyday Korean a learner can follow.",
+    },
+    "es": {
+        "label": "Spanish",
+        "native": "Español",
+        "instruction": "natural conversational Spanish (neutral Latin American register). Use everyday vocabulary a learner can follow.",
+    },
+    "fr": {
+        "label": "French",
+        "native": "Français",
+        "instruction": "natural conversational French. Use everyday vocabulary a learner can follow.",
+    },
+    "de": {
+        "label": "German",
+        "native": "Deutsch",
+        "instruction": "natural conversational German. Use everyday vocabulary a learner can follow.",
+    },
+}
+DEFAULT_LANGUAGE = "en"
 
 TONES: dict[str, str] = {
     "warm_friendly": "warm, friendly, encouraging — like two friends chatting",

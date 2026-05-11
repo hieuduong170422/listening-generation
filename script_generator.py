@@ -6,8 +6,10 @@ from api_utils import call_with_retry
 from config import (
     AUDIENCE_LEVELS,
     DEFAULT_AUDIENCE,
+    DEFAULT_LANGUAGE,
     DEFAULT_PACE,
     DEFAULT_TONE,
+    LANGUAGES,
     SPEECH_PACES,
     STYLES,
     TEXT_MODEL,
@@ -111,6 +113,7 @@ def generate_part_script(
     channel_name: str = "",
     num_speakers: int = 2,
     host_names: tuple[str, ...] = (),
+    language: str = DEFAULT_LANGUAGE,
 ) -> Script:
     if style_key not in STYLES:
         raise ValueError(f"Style không hợp lệ: {style_key}. Chọn 1 trong {list(STYLES)}")
@@ -130,6 +133,9 @@ def generate_part_script(
 
     audience_desc = AUDIENCE_LEVELS.get(audience_level, AUDIENCE_LEVELS[DEFAULT_AUDIENCE])
     tone_desc = TONES.get(tone, TONES[DEFAULT_TONE])
+    lang = LANGUAGES.get(language, LANGUAGES[DEFAULT_LANGUAGE])
+    language_label = lang["label"]
+    language_instruction = lang["instruction"]
 
     is_first = part_index == 1
     is_last = part_index == total_parts
@@ -257,6 +263,9 @@ def generate_part_script(
         branding_block = "\n".join(lines) + "\n\n"
 
     prompt = (
+        f"⚠️ TARGET LANGUAGE — HARD OVERRIDE: Every single dialogue line MUST be written in "
+        f"{language_label}: {language_instruction}\n"
+        "This overrides any other language hint mentioned elsewhere in this prompt.\n\n"
         f"{style.instruction}\n\n"
         f"AUDIENCE: {audience_desc}\n"
         f"TONE: {tone_desc}\n\n"
@@ -288,16 +297,13 @@ def generate_part_script(
         "- Keep turns short (1-3 sentences). Do not let one host monologue.\n"
         f"- {outro_rule}\n"
         "- Do NOT repeat material already covered in previous parts.\n\n"
-        "OUTPUT LANGUAGE (HARD RULE):\n"
-        "Every line MUST be 100% in English. Do NOT include Vietnamese, Chinese, Spanish, French, "
-        "or any other language anywhere — not even greetings like 'Xin chào', 'Chào các bạn', 'Hola', etc. "
-        "If you feel tempted to greet in another language, use 'Hi everyone' or 'Hey there' in English instead.\n\n"
+        "OUTPUT LANGUAGE (HARD RULE — REPEAT):\n"
+        f"Every line MUST be 100% in {language_label}. Do NOT mix in any other language anywhere — "
+        "not even greetings, names of concepts, or filler words. The host names provided are written "
+        "for the speaker tag only; the spoken dialogue itself is in the target language.\n\n"
         "OUTPUT FORMAT (STRICT):\n"
-        "Each line starts with `Speaker1:` or `Speaker2:` followed by the dialogue.\n"
+        "Each line starts with `Speaker1:` or `Speaker2:` followed by the dialogue text in the target language.\n"
         "No headings, no labels, no markdown, no stage directions.\n"
-        "EXAMPLE:\n"
-        "Speaker1: That's such a good point — and it actually leads into something I love.\n"
-        "Speaker2: Oh yeah, let's get into that. I have a quick example.\n"
     )
 
     response = call_with_retry(

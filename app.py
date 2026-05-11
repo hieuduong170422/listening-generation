@@ -14,6 +14,7 @@ from config import (
     DEFAULT_AUDIENCE,
     DEFAULT_CHANNEL_NAME,
     DEFAULT_HOST_NAMES,
+    DEFAULT_LANGUAGE,
     DEFAULT_NUM_SPEAKERS,
     DEFAULT_PACE,
     DEFAULT_SHOW_NAME,
@@ -21,6 +22,7 @@ from config import (
     DEFAULT_TOTAL_MINUTES,
     DEFAULT_VOICES_BY_INDEX,
     DURATION_PRESETS,
+    LANGUAGES,
     MAX_NUM_SPEAKERS,
     SPEECH_PACES,
     STYLES,
@@ -162,6 +164,7 @@ def _gen_part(
         channel_name=cfg["channel_name"],
         num_speakers=cfg["num_speakers"],
         host_names=tuple(cfg["host_names"]),
+        language=cfg["language"],
     )
     return script.to_readable()
 
@@ -207,6 +210,16 @@ def _sidebar(client: genai.Client) -> dict:
         st.header("⚙️ Cấu hình")
 
         with st.expander("📺 Show & Chủ đề", expanded=True):
+            language_keys = list(LANGUAGES.keys())
+            language = st.selectbox(
+                "🌐 Ngôn ngữ kịch bản",
+                language_keys,
+                index=language_keys.index(DEFAULT_LANGUAGE),
+                format_func=lambda k: f"{LANGUAGES[k]['label']} ({LANGUAGES[k]['native']})",
+                help="Ngôn ngữ AI sẽ viết toàn bộ kịch bản. Đổi sang Chinese, Japanese, etc. tuỳ ý.",
+            )
+            st.session_state["_language_for_suggest"] = language
+
             bc1, bc2 = st.columns(2)
             with bc1:
                 channel_name = st.text_input("Tên kênh YouTube", value=DEFAULT_CHANNEL_NAME)
@@ -251,6 +264,7 @@ def _sidebar(client: genai.Client) -> dict:
                             text_model=st.session_state.get("_model_for_suggest", "gemini-2.5-flash"),
                             seed_hint=topic if topic and topic != "How to communicate effectively in English" else "",
                             tone=st.session_state.get("_tone_for_suggest", ""),
+                            language=language,
                         )
                         st.session_state["topic_suggestions"] = suggestions
                     except Exception as e:
@@ -420,6 +434,7 @@ def _sidebar(client: genai.Client) -> dict:
         "channel_name": channel_name.strip(),
         "num_parts": int(num_parts),
         "minutes_per_part": int(minutes_per_part),
+        "language": language,
     }
 
 
@@ -439,6 +454,7 @@ def _step_outline(client: genai.Client, cfg: dict) -> None:
                     continuous=cfg["continuous"],
                     show_name=cfg["show_name"],
                     channel_name=cfg["channel_name"],
+                    language=cfg["language"],
                 )
                 st.session_state["outline"] = outline
                 st.session_state["outline_dict"] = _outline_to_dict(outline)

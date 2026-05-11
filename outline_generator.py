@@ -8,7 +8,9 @@ from api_utils import call_with_retry
 from config import (
     AUDIENCE_LEVELS,
     DEFAULT_AUDIENCE,
+    DEFAULT_LANGUAGE,
     DEFAULT_TONE,
+    LANGUAGES,
     TEXT_MODEL,
     TONES,
 )
@@ -93,10 +95,12 @@ def generate_outline(
     continuous: bool = True,
     show_name: str = "",
     channel_name: str = "",
+    language: str = DEFAULT_LANGUAGE,
 ) -> Outline:
     total_minutes = num_parts * minutes_per_part
     audience_desc = AUDIENCE_LEVELS.get(audience_level, AUDIENCE_LEVELS[DEFAULT_AUDIENCE])
     tone_desc = TONES.get(tone, TONES[DEFAULT_TONE])
+    lang = LANGUAGES.get(language, LANGUAGES[DEFAULT_LANGUAGE])
     continuity_note = (
         "This will be ONE continuous conversation between two hosts, split into parts only for production. "
         "Each part flows directly into the next — there is NO welcome/sign-off between parts. "
@@ -113,7 +117,9 @@ def generate_outline(
             bits.append(f'YouTube channel "{channel_name}"')
         branding_note = f"This series belongs to the {' on '.join(bits)}.\n\n"
     prompt = (
-        "You are planning a long-form English-learning podcast for a YouTube series. "
+        f"You are planning a long-form language-learning podcast for a YouTube series. "
+        f"TARGET LANGUAGE: {lang['label']} — the final spoken dialogue will be in {lang['label']}. "
+        "Plan the outline accordingly so each part is appropriate for that language and culture.\n"
         f"{branding_note}"
         f"Audience: {audience_desc}\n"
         f"Tone: {tone_desc}\n"

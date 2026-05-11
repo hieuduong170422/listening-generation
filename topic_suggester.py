@@ -5,7 +5,7 @@ from google import genai
 from google.genai import types
 
 from api_utils import call_with_retry
-from config import AUDIENCE_LEVELS, DEFAULT_AUDIENCE, TEXT_MODEL
+from config import AUDIENCE_LEVELS, DEFAULT_AUDIENCE, DEFAULT_LANGUAGE, LANGUAGES, TEXT_MODEL
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(.+?)\s*```", re.DOTALL)
 
@@ -39,27 +39,30 @@ def suggest_topics(
     text_model: str = TEXT_MODEL,
     seed_hint: str = "",
     tone: str = "",
+    language: str = DEFAULT_LANGUAGE,
 ) -> list[str]:
     audience_desc = AUDIENCE_LEVELS.get(audience_level, AUDIENCE_LEVELS[DEFAULT_AUDIENCE])
+    lang = LANGUAGES.get(language, LANGUAGES[DEFAULT_LANGUAGE])
     seed_block = (
         f"\nUSER HINT (steer toward this if useful): {seed_hint}\n" if seed_hint.strip() else ""
     )
     tone_block = f"\nDesired tone of the show: {tone}\n" if tone.strip() else ""
     prompt = (
-        "Suggest fresh, engaging English-podcast topics for a long-form listening series "
-        "(20-30 minute episodes between two hosts) aimed at this audience:\n"
-        f"{audience_desc}\n"
+        f"Suggest fresh, engaging podcast topics for a long-form {lang['label']}-listening series "
+        f"(20-30 minute episodes between two hosts) aimed at learners of {lang['label']}.\n"
+        f"Audience: {audience_desc}\n"
         f"{tone_block}"
         f"{seed_block}"
         "\nGuidelines:\n"
-        "- Practical and useful for English learners.\n"
+        f"- Practical and useful for learners of {lang['label']}.\n"
         "- Generates natural 2-way conversation (avoid pure how-to or list articles).\n"
         "- Mix everyday life, career, communication skills, culture, self-improvement, "
         "learning psychology, real-world scenarios.\n"
         "- Vary the angle: no two suggestions should feel like the same idea reworded.\n"
-        "- Each topic is a short English title under 12 words.\n"
-        "- Avoid generic titles like \"Improve your English\" — be specific and intriguing.\n\n"
-        f'Return ONLY valid JSON: {{"topics": ["...", "..."]}} with EXACTLY {count} items.'
+        f"- Each topic title MUST be written in {lang['label']} ({lang['native']}), under ~12 words.\n"
+        "- Be specific and intriguing — no generic \"Improve your X\" titles.\n\n"
+        f'Return ONLY valid JSON: {{"topics": ["...", "..."]}} with EXACTLY {count} items, '
+        f"each in {lang['label']}."
     )
 
     response = call_with_retry(
