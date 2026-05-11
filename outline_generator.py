@@ -2,6 +2,7 @@ import json
 import re
 from dataclasses import dataclass
 from google import genai
+from google.genai import types
 
 from config import (
     AUDIENCE_LEVELS,
@@ -38,6 +39,7 @@ class Outline:
 
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(.+?)\s*```", re.DOTALL)
+_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
 
 
 def _extract_json(raw: str) -> str:
@@ -49,6 +51,34 @@ def _extract_json(raw: str) -> str:
     if start == -1 or end == -1 or end <= start:
         raise ValueError("Không tìm được JSON trong phản hồi outline.")
     return raw[start : end + 1]
+
+
+def _normalize_quotes(s: str) -> str:
+    return (
+        s.replace("“", '"').replace("”", '"')
+         .replace("‘", "'").replace("’", "'")
+    )
+
+
+def _safe_load_json(raw: str) -> dict:
+    attempts: list[str] = [raw]
+    try:
+        attempts.append(_extract_json(raw))
+    except ValueError:
+        pass
+    attempts.append(_TRAILING_COMMA_RE.sub(r"\1", _normalize_quotes(raw)))
+    if len(attempts) > 1:
+        attempts.append(_TRAILING_COMMA_RE.sub(r"\1", _normalize_quotes(attempts[1])))
+
+    last_err: Exception | None = None
+    for candidate in attempts:
+        try:
+            return json.loads(candidate)
+        except Exception as e:
+            last_err = e
+    raise ValueError(
+        f"Không parse được JSON outline. Raw đầu phản hồi:\n{raw[:600]}"
+    ) from last_err
 
 
 def generate_outline(
@@ -103,9 +133,13 @@ def generate_outline(
         'Each "summary" is 1-2 sentences. Each "key_points" array has 3-5 short bullets.'
     )
 
-    response = client.models.generate_content(model=text_model, contents=prompt)
+    response = client.models.generate_content(
+        model=text_model,
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
     raw = (response.text or "").strip()
-    payload = json.loads(_extract_json(raw))
+    payload = _safe_load_json(raw)
 
     items = payload.get("parts", [])
     if len(items) != num_parts:
