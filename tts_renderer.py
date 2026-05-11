@@ -3,6 +3,7 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
+from api_utils import call_with_retry
 from config import DEFAULT_PACE, SPEECH_PACES, TTS_MODEL
 from script_generator import DialogueLine, Script
 
@@ -35,7 +36,8 @@ def _render_single_voice(
     voice: str,
     pace: str,
 ) -> Path:
-    response = client.models.generate_content(
+    response = call_with_retry(
+        client.models.generate_content,
         model=TTS_MODEL,
         contents=script.to_tts_prompt(pace=pace),
         config=types.GenerateContentConfig(
@@ -80,7 +82,8 @@ def _render_two_speakers(
     voice2: str,
     pace: str,
 ) -> Path:
-    response = client.models.generate_content(
+    response = call_with_retry(
+        client.models.generate_content,
         model=TTS_MODEL,
         contents=script.to_tts_prompt(pace=pace),
         config=types.GenerateContentConfig(
@@ -99,7 +102,8 @@ def _render_line_with_voice(
     pace_prefix: str,
 ) -> bytes:
     prompt = f"{pace_prefix}\n{line_text}"
-    response = client.models.generate_content(
+    response = call_with_retry(
+        client.models.generate_content,
         model=TTS_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(

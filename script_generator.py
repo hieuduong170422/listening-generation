@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 from google import genai
 
+from api_utils import call_with_retry
 from config import (
     AUDIENCE_LEVELS,
     DEFAULT_AUDIENCE,
@@ -82,7 +83,9 @@ def generate_script(client: genai.Client, topic: str, style_key: str, text_model
         "Speaker2: Đúng rồi, mình rất hào hứng với chủ đề này.\n"
     )
 
-    response = client.models.generate_content(model=text_model, contents=prompt)
+    response = call_with_retry(
+        client.models.generate_content, model=text_model, contents=prompt
+    )
     raw = (response.text or "").strip()
     lines = _parse_lines(raw)
     return Script(topic=topic, style=style_key, lines=lines)
@@ -297,7 +300,9 @@ def generate_part_script(
         "Speaker2: Oh yeah, let's get into that. I have a quick example.\n"
     )
 
-    response = client.models.generate_content(model=text_model, contents=prompt)
+    response = call_with_retry(
+        client.models.generate_content, model=text_model, contents=prompt
+    )
     raw = (response.text or "").strip()
     lines = _parse_lines(raw)
     return Script(topic=f"{topic} — Part {part_index}: {part_title}", style=style_key, lines=lines)

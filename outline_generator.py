@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from google import genai
 from google.genai import types
 
+from api_utils import call_with_retry
 from config import (
     AUDIENCE_LEVELS,
     DEFAULT_AUDIENCE,
@@ -133,7 +134,8 @@ def generate_outline(
         'Each "summary" is 1-2 sentences. Each "key_points" array has 3-5 short bullets.'
     )
 
-    response = client.models.generate_content(
+    response = call_with_retry(
+        client.models.generate_content,
         model=text_model,
         contents=prompt,
         config=types.GenerateContentConfig(response_mime_type="application/json"),

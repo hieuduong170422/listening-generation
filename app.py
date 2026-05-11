@@ -30,6 +30,7 @@ from config import (
 from outline_generator import Outline, PartBrief, generate_outline
 from script_generator import extract_tail_lines, generate_part_script, parse_script_text
 from srt_generator import write_full_srt
+from topic_suggester import suggest_topics
 from tts_renderer import render_script_with_voices
 
 ROOT = Path(__file__).resolve().parent
@@ -192,122 +193,205 @@ def _suggest_num_parts(total_minutes: int) -> int:
     return max(1, round(total_minutes / target_per_part))
 
 
-def _sidebar() -> dict:
+_SIDEBAR_CSS = """
+<style>
+section[data-testid="stSidebar"] { width: 520px !important; min-width: 520px !important; }
+section[data-testid="stSidebar"] > div { width: 520px !important; }
+</style>
+"""
+
+
+def _sidebar(client: genai.Client) -> dict:
+    st.markdown(_SIDEBAR_CSS, unsafe_allow_html=True)
     with st.sidebar:
         st.header("⚙️ Cấu hình")
 
-        st.subheader("📺 Show & Chủ đề")
-        channel_name = st.text_input("Tên kênh YouTube", value=DEFAULT_CHANNEL_NAME)
-        show_name = st.text_input("Tên show / podcast", value=DEFAULT_SHOW_NAME)
-        topic = st.text_area(
-            "Chủ đề tập này",
-            value="How to communicate effectively in English",
-            height=80,
-        )
+        with st.expander("📺 Show & Chủ đề", expanded=True):
+            bc1, bc2 = st.columns(2)
+            with bc1:
+                channel_name = st.text_input("Tên kênh YouTube", value=DEFAULT_CHANNEL_NAME)
+            with bc2:
+                show_name = st.text_input("Tên show / podcast", value=DEFAULT_SHOW_NAME)
 
-        st.subheader("⏱️ Thời lượng")
-        preset_options = [str(m) for m in DURATION_PRESETS] + ["Custom"]
-        default_idx = (
-            DURATION_PRESETS.index(DEFAULT_TOTAL_MINUTES)
-            if DEFAULT_TOTAL_MINUTES in DURATION_PRESETS else 0
-        )
-        chosen = st.selectbox("Tổng video (phút)", preset_options, index=default_idx)
-        if chosen == "Custom":
-            total_minutes = int(
-                st.number_input("Custom — tổng phút", min_value=1, max_value=180, value=20)
+            if "topic_text" not in st.session_state:
+                st.session_state["topic_text"] = "How to communicate effectively in English"
+
+            topic = st.text_area(
+                "Chủ đề tập này",
+                height=80,
+                key="topic_text",
             )
-        else:
-            total_minutes = int(chosen)
 
-        suggested = _suggest_num_parts(total_minutes)
-        num_parts = int(
-            st.number_input(
-                "Số part (chia file)",
+            suggest_count = st.slider(
+                "Số chủ đề gợi ý",
                 min_value=1,
-                max_value=min(20, total_minutes),
-                value=suggested,
-                help="Phút mỗi part tự derive từ tổng phút ÷ số part.",
+                max_value=5,
+                value=3,
+                help="Số lượng chủ đề AI sẽ gợi ý khi bấm 💡.",
             )
-        )
-        minutes_per_part = max(1, round(total_minutes / num_parts))
-        st.caption(
-            f"→ **{num_parts} file × ~{minutes_per_part} phút** "
-            f"(tổng ~{num_parts * minutes_per_part} phút)"
-        )
 
-        st.subheader("✍️ Nội dung")
-        style_keys = list(STYLES.keys())
-        default_style_idx = (
-            style_keys.index("english_learning") if "english_learning" in style_keys else 0
-        )
-        style = st.selectbox("Style kịch bản", style_keys, index=default_style_idx)
-        audience_keys = list(AUDIENCE_LEVELS.keys())
-        audience_level = st.selectbox(
-            "Trình độ người nghe",
-            audience_keys,
-            index=audience_keys.index(DEFAULT_AUDIENCE),
-        )
-        tone_keys = list(TONES.keys())
-        tone = st.selectbox(
-            "Giọng điệu (tone)",
-            tone_keys,
-            index=tone_keys.index(DEFAULT_TONE),
-        )
-        continuous = st.toggle(
-            "🔗 Hội thoại liên tục giữa các part",
-            value=True,
-            help=(
-                "BẬT: cả series là 1 hội thoại dài, chỉ part 1 chào, chỉ part cuối kết.\n"
-                "TẮT: mỗi part là episode độc lập."
-            ),
-        )
+            sc1, sc2 = st.columns([1, 1])
+            with sc1:
+                suggest_clicked = st.button(
+                    "💡 Gợi ý chủ đề", use_container_width=True,
+                    help="AI gen N chủ đề gợi ý — chọn 1 để fill vào ô Chủ đề.",
+                )
+            with sc2:
+                if st.button("🔁 Gen lại gợi ý", use_container_width=True,
+                             disabled=not st.session_state.get("topic_suggestions")):
+                    suggest_clicked = True
 
-        st.subheader("🎙️ Giọng đọc")
-        num_speakers = st.selectbox(
-            "Số người dẫn",
-            list(range(1, MAX_NUM_SPEAKERS + 1)),
-            index=DEFAULT_NUM_SPEAKERS - 1,
-            format_func=lambda n: f"{n} người" + (" (monologue)" if n == 1 else ""),
-            help="1-2 người: render 1 lần / part. 3+ người: render từng line riêng rồi nối — chậm hơn, tốn API hơn.",
-        )
-        if num_speakers >= 3:
-            st.warning(
-                f"⚠️ {num_speakers} người: Gemini chỉ native support 2 voice/lần. "
-                "Mỗi line sẽ render riêng rồi nối WAV — chậm và tốn nhiều API call hơn."
+            if suggest_clicked:
+                with st.spinner("Đang nghĩ chủ đề..."):
+                    try:
+                        suggestions = suggest_topics(
+                            client,
+                            audience_level=st.session_state.get("_audience_for_suggest", "intermediate"),
+                            count=int(suggest_count),
+                            text_model=st.session_state.get("_model_for_suggest", "gemini-2.5-flash"),
+                            seed_hint=topic if topic and topic != "How to communicate effectively in English" else "",
+                            tone=st.session_state.get("_tone_for_suggest", ""),
+                        )
+                        st.session_state["topic_suggestions"] = suggestions
+                    except Exception as e:
+                        st.error(f"Lỗi gen gợi ý: {e}")
+
+            suggestions = st.session_state.get("topic_suggestions") or []
+            if suggestions:
+                picked = st.selectbox(
+                    "📋 Gợi ý (chọn 1 để dùng)",
+                    ["— chọn —"] + suggestions,
+                    index=0,
+                    key="topic_suggest_pick",
+                )
+
+                def _apply_picked_topic():
+                    p = st.session_state.get("topic_suggest_pick")
+                    if p and p != "— chọn —":
+                        st.session_state["topic_text"] = p
+                        st.session_state["topic_suggest_pick"] = "— chọn —"
+
+                if picked != "— chọn —":
+                    st.button(
+                        "✅ Dùng chủ đề này",
+                        use_container_width=True,
+                        on_click=_apply_picked_topic,
+                    )
+
+        with st.expander("⏱️ Thời lượng", expanded=True):
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                preset_options = [str(m) for m in DURATION_PRESETS] + ["Custom"]
+                default_idx = (
+                    DURATION_PRESETS.index(DEFAULT_TOTAL_MINUTES)
+                    if DEFAULT_TOTAL_MINUTES in DURATION_PRESETS else 0
+                )
+                chosen = st.selectbox("Tổng video (phút)", preset_options, index=default_idx)
+                if chosen == "Custom":
+                    total_minutes = int(
+                        st.number_input("Custom — tổng phút", min_value=1, max_value=180, value=20)
+                    )
+                else:
+                    total_minutes = int(chosen)
+            with dc2:
+                suggested = _suggest_num_parts(total_minutes)
+                num_parts = int(
+                    st.number_input(
+                        "Số part (chia file)",
+                        min_value=1,
+                        max_value=min(20, total_minutes),
+                        value=suggested,
+                        help="Phút mỗi part tự derive từ tổng phút ÷ số part.",
+                    )
+                )
+            minutes_per_part = max(1, round(total_minutes / num_parts))
+            st.caption(
+                f"→ **{num_parts} file × ~{minutes_per_part} phút** "
+                f"(tổng ~{num_parts * minutes_per_part} phút)"
             )
-        host_names: list[str] = []
-        host_voices: list[str] = []
-        for i in range(num_speakers):
-            c1, c2 = st.columns(2)
-            with c1:
-                name = st.text_input(
-                    f"Tên nhân vật {i + 1}",
-                    value=DEFAULT_HOST_NAMES[i] if i < len(DEFAULT_HOST_NAMES) else f"Host{i + 1}",
-                    key=f"host_name_{i}",
-                )
-                host_names.append(name)
-            with c2:
-                default_voice = (
-                    DEFAULT_VOICES_BY_INDEX[i]
-                    if i < len(DEFAULT_VOICES_BY_INDEX)
-                    else AVAILABLE_VOICES[i % len(AVAILABLE_VOICES)]
-                )
-                voice = st.selectbox(
-                    f"Voice {i + 1}",
-                    AVAILABLE_VOICES,
-                    index=AVAILABLE_VOICES.index(default_voice) if default_voice in AVAILABLE_VOICES else 0,
-                    key=f"host_voice_{i}",
-                )
-                host_voices.append(voice)
-        pace_keys = list(SPEECH_PACES.keys())
-        pace = st.selectbox(
-            "Tốc độ đọc",
-            pace_keys,
-            index=pace_keys.index(DEFAULT_PACE),
-        )
 
-        st.subheader("🤖 Model")
-        text_model = st.selectbox("Text model", TEXT_MODEL_OPTIONS, index=0)
+        with st.expander("✍️ Nội dung", expanded=False):
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                style_keys = list(STYLES.keys())
+                default_style_idx = (
+                    style_keys.index("english_learning") if "english_learning" in style_keys else 0
+                )
+                style = st.selectbox("Style kịch bản", style_keys, index=default_style_idx)
+                audience_keys = list(AUDIENCE_LEVELS.keys())
+                audience_level = st.selectbox(
+                    "Trình độ người nghe",
+                    audience_keys,
+                    index=audience_keys.index(DEFAULT_AUDIENCE),
+                )
+            with cc2:
+                tone_keys = list(TONES.keys())
+                tone = st.selectbox(
+                    "Giọng điệu (tone)",
+                    tone_keys,
+                    index=tone_keys.index(DEFAULT_TONE),
+                )
+                continuous = st.toggle(
+                    "🔗 Hội thoại liên tục",
+                    value=True,
+                    help=(
+                        "BẬT: cả series là 1 hội thoại dài, chỉ part 1 chào, chỉ part cuối kết.\n"
+                        "TẮT: mỗi part là episode độc lập."
+                    ),
+                )
+            st.session_state["_audience_for_suggest"] = audience_level
+            st.session_state["_tone_for_suggest"] = TONES.get(tone, "")
+
+        with st.expander("🎙️ Giọng đọc", expanded=False):
+            vc1, vc2 = st.columns(2)
+            with vc1:
+                num_speakers = st.selectbox(
+                    "Số người dẫn",
+                    list(range(1, MAX_NUM_SPEAKERS + 1)),
+                    index=DEFAULT_NUM_SPEAKERS - 1,
+                    format_func=lambda n: f"{n} người" + (" (monologue)" if n == 1 else ""),
+                    help="1-2 người: render 1 lần / part. 3+ người: chậm hơn, tốn API hơn.",
+                )
+            with vc2:
+                pace_keys = list(SPEECH_PACES.keys())
+                pace = st.selectbox(
+                    "Tốc độ đọc",
+                    pace_keys,
+                    index=pace_keys.index(DEFAULT_PACE),
+                )
+            if num_speakers >= 3:
+                st.warning(
+                    f"⚠️ {num_speakers} người: Gemini chỉ native support 2 voice/lần. "
+                    "Mỗi line sẽ render riêng rồi nối WAV — chậm và tốn nhiều API call hơn."
+                )
+            host_names: list[str] = []
+            host_voices: list[str] = []
+            for i in range(num_speakers):
+                c1, c2 = st.columns(2)
+                with c1:
+                    name = st.text_input(
+                        f"Tên nhân vật {i + 1}",
+                        value=DEFAULT_HOST_NAMES[i] if i < len(DEFAULT_HOST_NAMES) else f"Host{i + 1}",
+                        key=f"host_name_{i}",
+                    )
+                    host_names.append(name)
+                with c2:
+                    default_voice = (
+                        DEFAULT_VOICES_BY_INDEX[i]
+                        if i < len(DEFAULT_VOICES_BY_INDEX)
+                        else AVAILABLE_VOICES[i % len(AVAILABLE_VOICES)]
+                    )
+                    voice = st.selectbox(
+                        f"Voice {i + 1}",
+                        AVAILABLE_VOICES,
+                        index=AVAILABLE_VOICES.index(default_voice) if default_voice in AVAILABLE_VOICES else 0,
+                        key=f"host_voice_{i}",
+                    )
+                    host_voices.append(voice)
+
+        with st.expander("🤖 Model", expanded=False):
+            text_model = st.selectbox("Text model", TEXT_MODEL_OPTIONS, index=0)
+            st.session_state["_model_for_suggest"] = text_model
 
         st.divider()
         if st.button("🔄 Reset session", use_container_width=True):
@@ -567,8 +651,8 @@ def main() -> None:
     if not _check_auth():
         return
     st.title("🎙️ TTS Script Gen — Long-form Podcast Builder")
-    cfg = _sidebar()
     client = _get_client()
+    cfg = _sidebar(client)
     _step_outline(client, cfg)
     st.divider()
     _step_parts(client, cfg)
