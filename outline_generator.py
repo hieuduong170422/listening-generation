@@ -133,25 +133,42 @@ def generate_outline(
         "Design an outline so each part covers a distinct sub-topic, building progressively "
         "from framing to deeper practical advice. The whole series should feel like a coherent journey, "
         "not repetitive.\n\n"
-        "Return ONLY valid JSON in this exact shape (no prose, no markdown fences):\n"
-        "{\n"
-        '  "parts": [\n'
-        '    {"title": "...", "summary": "...", "key_points": ["...", "...", "..."]}\n'
-        "  ]\n"
-        "}\n"
-        f'The "parts" array MUST have exactly {num_parts} items. '
-        'Each "summary" is 1-2 sentences. Each "key_points" array has 3-5 short bullets.'
+        "Return ONLY valid JSON. No markdown, no prose, no fences. Schema:\n"
+        '{"parts":[{"title":"<short>","summary":"<1 sentence>","key_points":["<short>","<short>","<short>"]}]}\n'
+        f'The "parts" array MUST have EXACTLY {num_parts} items.\n'
+        'CONSTRAINTS to keep response short and valid:\n'
+        '- "title": ≤10 words, no quotes inside.\n'
+        '- "summary": exactly ONE sentence, ≤25 words.\n'
+        '- "key_points": EXACTLY 3 bullets, each ≤12 words.\n'
+        'Keep the entire JSON under 2000 characters. Do NOT use smart quotes or trailing commas.'
     )
 
     response = call_with_retry(
         client.models.generate_content,
         model=text_model,
         contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            max_output_tokens=16384,
+            temperature=0.7,
+        ),
     )
     track_response(usage_store, response, "text")
     raw = (response.text or "").strip()
-    payload = _safe_load_json(raw)
+    try:
+        payload = _safe_load_json(raw)
+    except ValueError as e:
+        finish_reason = None
+        try:
+            finish_reason = response.candidates[0].finish_reason
+        except Exception:
+            pass
+        hint = ""
+        if finish_reason and "MAX_TOKENS" in str(finish_reason).upper():
+            hint = " (Gemini cắt giữa chừng do max_output_tokens. Giảm num_parts hoặc thử lại.)"
+        elif finish_reason:
+            hint = f" (finish_reason={finish_reason})"
+        raise ValueError(str(e) + hint) from e
 
     items = payload.get("parts", [])
     if len(items) != num_parts:
