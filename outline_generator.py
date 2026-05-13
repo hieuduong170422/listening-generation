@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import json
 import re
 from dataclasses import dataclass
 from google import genai
 from google.genai import types
 
-from api_utils import call_with_retry
+from api_utils import call_with_retry, track_response
 from config import (
     AUDIENCE_LEVELS,
     DEFAULT_AUDIENCE,
@@ -96,6 +98,7 @@ def generate_outline(
     show_name: str = "",
     channel_name: str = "",
     language: str = DEFAULT_LANGUAGE,
+    usage_store: list | None = None,
 ) -> Outline:
     total_minutes = num_parts * minutes_per_part
     audience_desc = AUDIENCE_LEVELS.get(audience_level, AUDIENCE_LEVELS[DEFAULT_AUDIENCE])
@@ -146,6 +149,7 @@ def generate_outline(
         contents=prompt,
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
+    track_response(usage_store, response, "text")
     raw = (response.text or "").strip()
     payload = _safe_load_json(raw)
 

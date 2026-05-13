@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import json
 import re
 
 from google import genai
 from google.genai import types
 
-from api_utils import call_with_retry
+from api_utils import call_with_retry, track_response
 from config import AUDIENCE_LEVELS, DEFAULT_AUDIENCE, DEFAULT_LANGUAGE, LANGUAGES, TEXT_MODEL
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(.+?)\s*```", re.DOTALL)
@@ -40,6 +42,7 @@ def suggest_topics(
     seed_hint: str = "",
     tone: str = "",
     language: str = DEFAULT_LANGUAGE,
+    usage_store: list | None = None,
 ) -> list[str]:
     audience_desc = AUDIENCE_LEVELS.get(audience_level, AUDIENCE_LEVELS[DEFAULT_AUDIENCE])
     lang = LANGUAGES.get(language, LANGUAGES[DEFAULT_LANGUAGE])
@@ -71,6 +74,7 @@ def suggest_topics(
         contents=prompt,
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
+    track_response(usage_store, response, "text")
     raw = (response.text or "").strip()
     topics = _parse_topics(raw)
     if not topics:

@@ -29,9 +29,9 @@ from config import (
     TEXT_MODEL_OPTIONS,
     TONES,
 )
+from api_utils import summarize_usage
 from outline_generator import Outline, PartBrief, generate_outline
 from script_generator import extract_tail_lines, generate_part_script, parse_script_text
-from srt_generator import write_full_srt
 from topic_suggester import suggest_topics
 from tts_renderer import render_script_with_voices
 
@@ -92,6 +92,7 @@ def _init_state() -> None:
         "audio_paths": {},
         "base_slug": None,
         "cancel": False,
+        "usage_log": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -165,6 +166,7 @@ def _gen_part(
         num_speakers=cfg["num_speakers"],
         host_names=tuple(cfg["host_names"]),
         language=cfg["language"],
+        usage_store=st.session_state.get("usage_log"),
     )
     return script.to_readable()
 
@@ -186,7 +188,9 @@ def _render_part(
     txt_path.parent.mkdir(parents=True, exist_ok=True)
     txt_path.write_text(text, encoding="utf-8")
     render_script_with_voices(
-        client, script, wav_path, voices, pace=pace, progress_callback=progress_callback
+        client, script, wav_path, voices, pace=pace,
+        progress_callback=progress_callback,
+        usage_store=st.session_state.get("usage_log"),
     )
     return str(wav_path)
 
@@ -265,6 +269,7 @@ def _sidebar(client: genai.Client) -> dict:
                             seed_hint=topic if topic and topic != "How to communicate effectively in English" else "",
                             tone=st.session_state.get("_tone_for_suggest", ""),
                             language=language,
+                            usage_store=st.session_state.get("usage_log"),
                         )
                         st.session_state["topic_suggestions"] = suggestions
                     except Exception as e:
@@ -407,6 +412,36 @@ def _sidebar(client: genai.Client) -> dict:
             text_model = st.selectbox("Text model", TEXT_MODEL_OPTIONS, index=0)
             st.session_state["_model_for_suggest"] = text_model
 
+        with st.expander("💰 Token & Chi phí (session)", expanded=False):
+            summary = summarize_usage(st.session_state.get("usage_log") or [])
+            if summary["calls"] == 0:
+                st.caption("Chưa có gen nào trong session này.")
+            else:
+                mc1, mc2 = st.columns(2)
+                with mc1:
+                    st.metric("Tổng calls", summary["calls"])
+                    st.metric("Input tokens", f"{summary['total_prompt']:,}")
+                with mc2:
+                    st.metric(
+                        "Chi phí (USD)", f"${summary['total_cost_usd']:.4f}",
+                    )
+                    st.metric(
+                        "Chi phí (VND)", f"{summary['total_cost_vnd']:,}đ",
+                    )
+                st.caption(f"Output tokens: {summary['total_output']:,}")
+                if summary["by_kind"]:
+                    st.markdown("**Breakdown:**")
+                    for k, info in summary["by_kind"].items():
+                        kind_label = "📝 Text gen" if k == "text" else "🔊 TTS audio"
+                        st.markdown(
+                            f"- {kind_label}: {info['calls']} calls, "
+                            f"in {info['prompt']:,} / out {info['output']:,} tokens, "
+                            f"~${info['cost_usd']:.4f}"
+                        )
+            if st.button("🗑️ Reset usage log", use_container_width=True):
+                st.session_state["usage_log"] = []
+                st.rerun()
+
         st.divider()
         if st.button("🔄 Reset session", use_container_width=True):
             for k in ("outline", "outline_dict", "base_slug"):
@@ -414,6 +449,7 @@ def _sidebar(client: genai.Client) -> dict:
             st.session_state["scripts"] = {}
             st.session_state["audio_paths"] = {}
             st.session_state["cancel"] = False
+            st.session_state["usage_log"] = []
             for k in list(st.session_state.keys()):
                 if k.startswith("script_text_"):
                     del st.session_state[k]
@@ -455,6 +491,7 @@ def _step_outline(client: genai.Client, cfg: dict) -> None:
                     show_name=cfg["show_name"],
                     channel_name=cfg["channel_name"],
                     language=cfg["language"],
+                    usage_store=st.session_state.get("usage_log"),
                 )
                 st.session_state["outline"] = outline
                 st.session_state["outline_dict"] = _outline_to_dict(outline)
@@ -509,48 +546,13 @@ def _step_parts(client: genai.Client, cfg: dict) -> None:
         f"({missing_audio_with_script} part có script chưa render audio)"
     )
 
-    cols = st.columns([1.4, 1.4, 1.4, 1, 2])
+    cols = st.columns([1.4, 1.4, 1, 3])
     run_all_clicked = cols[0].button("▶ Run All Remaining", type="primary")
     render_missing_clicked = cols[1].button(
         "🔊 Render audio thiếu", disabled=missing_audio_with_script == 0
     )
-    export_srt_clicked = cols[2].button(
-        "📥 Export subtitle (.srt)", disabled=n_audios == 0,
-        help="Tạo 1 file SRT gộp toàn bộ part đã render, timestamps khớp với audio thực tế.",
-    )
-    if cols[3].button("■ Cancel"):
+    if cols[2].button("■ Cancel"):
         st.session_state["cancel"] = True
-
-    if export_srt_clicked:
-        try:
-            ordered_parts: list[tuple] = []
-            for part in outline.parts:
-                if part.index in st.session_state["audio_paths"]:
-                    text = st.session_state["scripts"][part.index]
-                    script = parse_script_text(outline.topic, cfg["style"], text)
-                    wav_path = Path(st.session_state["audio_paths"][part.index])
-                    ordered_parts.append((script, wav_path))
-            srt_path = HISTORY_DIR / f"{base_slug}_full.srt"
-            write_full_srt(
-                parts=ordered_parts,
-                out_path=srt_path,
-                host_names=cfg["host_names"],
-                pace=cfg["pace"],
-            )
-            st.session_state["full_srt_path"] = str(srt_path)
-            st.success(f"✓ Đã tạo: `{srt_path}`")
-        except Exception as e:
-            st.error(f"Lỗi export SRT: {e}")
-
-    full_srt = st.session_state.get("full_srt_path")
-    if full_srt and Path(full_srt).exists():
-        with open(full_srt, "rb") as f:
-            st.download_button(
-                "⬇️ Download full.srt",
-                data=f,
-                file_name=Path(full_srt).name,
-                mime="text/plain",
-            )
 
     if run_all_clicked or render_missing_clicked:
         st.session_state["cancel"] = False

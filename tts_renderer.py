@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import wave
 from pathlib import Path
 from google import genai
 from google.genai import types
 
-from api_utils import call_with_retry
+from api_utils import call_with_retry, track_response
 from config import DEFAULT_PACE, SPEECH_PACES, TTS_MODEL
 from script_generator import DialogueLine, Script
 
@@ -35,6 +37,7 @@ def _render_single_voice(
     output_path: Path,
     voice: str,
     pace: str,
+    usage_store: list | None = None,
 ) -> Path:
     response = call_with_retry(
         client.models.generate_content,
@@ -49,6 +52,7 @@ def _render_single_voice(
             ),
         ),
     )
+    track_response(usage_store, response, "tts")
     _save_wav(output_path, _extract_audio_bytes(response))
     return output_path
 
@@ -81,6 +85,7 @@ def _render_two_speakers(
     voice1: str,
     voice2: str,
     pace: str,
+    usage_store: list | None = None,
 ) -> Path:
     response = call_with_retry(
         client.models.generate_content,
@@ -91,6 +96,7 @@ def _render_two_speakers(
             speech_config=_build_two_speaker_config(voice1, voice2),
         ),
     )
+    track_response(usage_store, response, "tts")
     _save_wav(output_path, _extract_audio_bytes(response))
     return output_path
 
@@ -100,6 +106,7 @@ def _render_line_with_voice(
     line_text: str,
     voice: str,
     pace_prefix: str,
+    usage_store: list | None = None,
 ) -> bytes:
     prompt = f"{pace_prefix}\n{line_text}"
     response = call_with_retry(
@@ -115,6 +122,7 @@ def _render_line_with_voice(
             ),
         ),
     )
+    track_response(usage_store, response, "tts")
     return _extract_audio_bytes(response)
 
 
@@ -125,6 +133,7 @@ def _render_n_speakers_per_line(
     voices: list[str],
     pace: str,
     progress_callback=None,
+    usage_store: list | None = None,
 ) -> Path:
     pace_prefix = SPEECH_PACES.get(pace, SPEECH_PACES[DEFAULT_PACE])
     total = len(script.lines)
@@ -134,7 +143,9 @@ def _render_n_speakers_per_line(
             progress_callback(idx, total, line.speaker)
         speaker_idx = int(line.speaker.replace("Speaker", "")) - 1
         voice = voices[speaker_idx] if 0 <= speaker_idx < len(voices) else voices[0]
-        chunk = _render_line_with_voice(client, line.text, voice, pace_prefix)
+        chunk = _render_line_with_voice(
+            client, line.text, voice, pace_prefix, usage_store=usage_store
+        )
         audio_chunks.append(chunk)
     _save_wav(output_path, b"".join(audio_chunks))
     return output_path
@@ -160,16 +171,21 @@ def render_script_with_voices(
     voices: list[str],
     pace: str = DEFAULT_PACE,
     progress_callback=None,
+    usage_store: list | None = None,
 ) -> Path:
     n = len(voices)
     if n == 0:
         raise ValueError("Cần ít nhất 1 voice.")
     if n == 1:
-        return _render_single_voice(client, script, output_path, voices[0], pace)
+        return _render_single_voice(
+            client, script, output_path, voices[0], pace, usage_store=usage_store
+        )
     if n == 2:
         return _render_two_speakers(
-            client, script, output_path, voices[0], voices[1], pace
+            client, script, output_path, voices[0], voices[1], pace,
+            usage_store=usage_store,
         )
     return _render_n_speakers_per_line(
-        client, script, output_path, voices, pace, progress_callback=progress_callback
+        client, script, output_path, voices, pace,
+        progress_callback=progress_callback, usage_store=usage_store,
     )

@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 from google import genai
 
-from api_utils import call_with_retry
+from api_utils import call_with_retry, track_response
 from config import (
     AUDIENCE_LEVELS,
     DEFAULT_AUDIENCE,
@@ -88,6 +90,7 @@ def generate_script(client: genai.Client, topic: str, style_key: str, text_model
     response = call_with_retry(
         client.models.generate_content, model=text_model, contents=prompt
     )
+    track_response(None, response, "text")
     raw = (response.text or "").strip()
     lines = _parse_lines(raw)
     return Script(topic=topic, style=style_key, lines=lines)
@@ -114,6 +117,7 @@ def generate_part_script(
     num_speakers: int = 2,
     host_names: tuple[str, ...] = (),
     language: str = DEFAULT_LANGUAGE,
+    usage_store: list | None = None,
 ) -> Script:
     if style_key not in STYLES:
         raise ValueError(f"Style không hợp lệ: {style_key}. Chọn 1 trong {list(STYLES)}")
@@ -309,6 +313,7 @@ def generate_part_script(
     response = call_with_retry(
         client.models.generate_content, model=text_model, contents=prompt
     )
+    track_response(usage_store, response, "text")
     raw = (response.text or "").strip()
     lines = _parse_lines(raw)
     return Script(topic=f"{topic} — Part {part_index}: {part_title}", style=style_key, lines=lines)
