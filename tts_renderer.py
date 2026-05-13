@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import wave
 from pathlib import Path
 from google import genai
@@ -8,6 +9,34 @@ from google.genai import types
 from api_utils import call_with_retry, track_response
 from config import DEFAULT_PACE, SPEECH_PACES, TTS_MODEL
 from script_generator import DialogueLine, Script
+
+_STAGE_DIRECTION_RE = re.compile(r"[*\[(](?:laughs?|chuckles?|sighs?|pause|smiles?|giggles?|coughs?|claps?|gasps?)[*\])]", re.IGNORECASE)
+_MULTI_SPACE_RE = re.compile(r"\s+")
+_MULTI_DOT_RE = re.compile(r"\.{4,}")
+_TRAILING_PUNCT_RE = re.compile(r"\s+([,.!?;:])")
+
+
+def _sanitize_text(text: str) -> str:
+    s = text
+    s = s.replace("—", ", ").replace("–", ", ")
+    s = s.replace("“", '"').replace("”", '"')
+    s = s.replace("‘", "'").replace("’", "'")
+    s = s.replace("…", "...")
+    s = s.replace("•", "")
+    s = _STAGE_DIRECTION_RE.sub("", s)
+    s = _MULTI_DOT_RE.sub("...", s)
+    s = _TRAILING_PUNCT_RE.sub(r"\1", s)
+    s = _MULTI_SPACE_RE.sub(" ", s)
+    return s.strip()
+
+
+def _sanitize_script(script: Script) -> Script:
+    cleaned_lines = tuple(
+        DialogueLine(speaker=line.speaker, text=_sanitize_text(line.text))
+        for line in script.lines
+        if _sanitize_text(line.text)
+    )
+    return Script(topic=script.topic, style=script.style, lines=cleaned_lines)
 
 _SAMPLE_RATE = 24000
 _CHANNELS = 1
@@ -173,6 +202,9 @@ def render_script_with_voices(
     progress_callback=None,
     usage_store: list | None = None,
 ) -> Path:
+    script = _sanitize_script(script)
+    if not script.lines:
+        raise ValueError("Script trống sau khi sanitize.")
     n = len(voices)
     if n == 0:
         raise ValueError("Cần ít nhất 1 voice.")
