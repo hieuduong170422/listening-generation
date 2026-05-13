@@ -196,7 +196,7 @@ def _render_part(
 
 
 def _suggest_num_parts(total_minutes: int) -> int:
-    target_per_part = 4
+    target_per_part = 2
     return max(1, round(total_minutes / target_per_part))
 
 
@@ -320,13 +320,18 @@ def _sidebar(client: genai.Client) -> dict:
                         min_value=1,
                         max_value=min(20, total_minutes),
                         value=suggested,
-                        help="Phút mỗi part tự derive từ tổng phút ÷ số part.",
+                        help="Khuyến nghị ~2 phút/part. Part càng ngắn càng ít lỗi TTS rẹt/vang.",
                     )
                 )
             minutes_per_part = max(1, round(total_minutes / num_parts))
+            quality_hint = ""
+            if minutes_per_part > 4:
+                quality_hint = " ⚠️ part dài >4 phút dễ bị lỗi TTS, nên chia nhỏ hơn"
+            elif minutes_per_part <= 2:
+                quality_hint = " ✅ part ngắn ổn định"
             st.caption(
                 f"→ **{num_parts} file × ~{minutes_per_part} phút** "
-                f"(tổng ~{num_parts * minutes_per_part} phút)"
+                f"(tổng ~{num_parts * minutes_per_part} phút){quality_hint}"
             )
 
         with st.expander("✍️ Nội dung", expanded=False):
