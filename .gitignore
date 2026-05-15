@@ -7,5 +7,6 @@ history/*.wav
 history/*.txt
 history/*.srt
 history/*.json
+history/*.jsonl
 !history/.gitkeep
 .DS_Store

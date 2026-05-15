@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import streamlit as st
@@ -29,11 +29,21 @@ from config import (
     TEXT_MODEL_OPTIONS,
     TONES,
 )
-from api_utils import summarize_usage
+from api_utils import DEFAULT_USD_TO_VND, summarize_usage
 from outline_generator import Outline, PartBrief, generate_outline
 from script_generator import extract_tail_lines, generate_part_script, parse_script_text
 from topic_suggester import suggest_topics
 from tts_renderer import render_script_with_voices
+from usage_logger import (
+    aggregate_by_period,
+    aggregate_by_user,
+    clear_log,
+    events_to_csv,
+    filter_by_date,
+    log_event,
+    log_path,
+    read_log,
+)
 
 ROOT = Path(__file__).resolve().parent
 HISTORY_DIR = ROOT / "history"
@@ -65,19 +75,42 @@ def _get_client() -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
+def _persist_usage(action: str, topic: str, before_len: int) -> None:
+    log = st.session_state.get("usage_log") or []
+    user = st.session_state.get("username", "anonymous")
+    for entry in log[before_len:]:
+        try:
+            log_event(
+                kind=entry["kind"],
+                action=action,
+                prompt_tokens=entry["prompt_tokens"],
+                output_tokens=entry["output_tokens"],
+                cost_usd=entry["cost_usd"],
+                user=user,
+                topic=topic,
+            )
+        except Exception:
+            pass
+
+
 def _check_auth() -> bool:
     expected = _read_secret("APP_PASSWORD")
     if not expected:
+        if not st.session_state.get("username"):
+            st.session_state["username"] = "anonymous"
         return True
     if st.session_state.get("_authed"):
         return True
 
     st.title("🔐 TTS Script Gen — Audivy")
-    st.caption("Nhập password để truy cập.")
+    st.caption("Nhập tên + password để truy cập.")
+    username = st.text_input("Tên (để track usage)", key="_login_user", value="")
     pwd = st.text_input("Password", type="password", key="_login_pwd")
     if st.button("Đăng nhập", type="primary"):
         if pwd == expected:
+            clean = (username or "").strip() or "anonymous"
             st.session_state["_authed"] = True
+            st.session_state["username"] = clean
             st.rerun()
         else:
             st.error("Sai password.")
@@ -145,6 +178,7 @@ def _gen_part(
 ) -> str:
     prev_titles = tuple(p.title for p in outline.parts[: part.index - 1])
     prev_tail = _previous_tail_for(outline, part.index)
+    before = len(st.session_state.get("usage_log") or [])
     script = generate_part_script(
         client=client,
         topic=outline.topic,
@@ -168,6 +202,7 @@ def _gen_part(
         language=cfg["language"],
         usage_store=st.session_state.get("usage_log"),
     )
+    _persist_usage(f"script_part{part.index}", outline.topic, before)
     return script.to_readable()
 
 
@@ -187,11 +222,13 @@ def _render_part(
     txt_path = HISTORY_DIR / f"{base_slug}_part{part_index}.txt"
     txt_path.parent.mkdir(parents=True, exist_ok=True)
     txt_path.write_text(text, encoding="utf-8")
+    before = len(st.session_state.get("usage_log") or [])
     render_script_with_voices(
         client, script, wav_path, voices, pace=pace,
         progress_callback=progress_callback,
         usage_store=st.session_state.get("usage_log"),
     )
+    _persist_usage(f"tts_part{part_index}", outline.topic, before)
     return str(wav_path)
 
 
@@ -261,6 +298,7 @@ def _sidebar(client: genai.Client) -> dict:
             if suggest_clicked:
                 with st.spinner("Đang nghĩ chủ đề..."):
                     try:
+                        before = len(st.session_state.get("usage_log") or [])
                         suggestions = suggest_topics(
                             client,
                             audience_level=st.session_state.get("_audience_for_suggest", "intermediate"),
@@ -271,6 +309,7 @@ def _sidebar(client: genai.Client) -> dict:
                             language=language,
                             usage_store=st.session_state.get("usage_log"),
                         )
+                        _persist_usage("suggest_topics", topic or "", before)
                         st.session_state["topic_suggestions"] = suggestions
                     except Exception as e:
                         st.error(f"Lỗi gen gợi ý: {e}")
@@ -484,6 +523,7 @@ def _step_outline(client: genai.Client, cfg: dict) -> None:
     if st.button("📝 Generate outline", type="primary", disabled=not cfg["topic"].strip()):
         with st.spinner("Đang sinh outline..."):
             try:
+                before = len(st.session_state.get("usage_log") or [])
                 outline = generate_outline(
                     client,
                     cfg["topic"],
@@ -498,6 +538,7 @@ def _step_outline(client: genai.Client, cfg: dict) -> None:
                     language=cfg["language"],
                     usage_store=st.session_state.get("usage_log"),
                 )
+                _persist_usage("outline", cfg["topic"], before)
                 st.session_state["outline"] = outline
                 st.session_state["outline_dict"] = _outline_to_dict(outline)
                 st.session_state["base_slug"] = (
@@ -668,17 +709,151 @@ def _step_parts(client: genai.Client, cfg: dict) -> None:
                 st.caption(f"📁 `{wav_path}`")
 
 
+def _render_stats() -> None:
+    st.header("📊 Lịch sử & Thống kê")
+    st.caption(
+        f"Log file: `{log_path()}` — lưu mỗi request gen (text + TTS) với user/topic/tokens/cost."
+    )
+
+    events = read_log()
+    if not events:
+        st.info("Chưa có log nào. Hãy gen 1 cái gì đó rồi quay lại tab này.")
+        return
+
+    all_users = sorted({e.get("user", "anonymous") for e in events})
+    fc1, fc2, fc3 = st.columns([1, 1, 2])
+    with fc1:
+        period = st.selectbox("Gộp theo", ["day", "week", "month"], index=0,
+                              format_func=lambda p: {"day": "Ngày", "week": "Tuần", "month": "Tháng"}[p])
+    with fc2:
+        user_filter = st.selectbox("User", ["(tất cả)"] + all_users)
+    with fc3:
+        dc1, dc2 = st.columns(2)
+        with dc1:
+            from_date = st.date_input("Từ", value=None, key="stat_from")
+        with dc2:
+            to_date = st.date_input("Đến", value=None, key="stat_to")
+
+    start = None
+    end = None
+    if from_date:
+        start = datetime(from_date.year, from_date.month, from_date.day,
+                         tzinfo=timezone.utc) - timedelta(hours=7)
+    if to_date:
+        end = datetime(to_date.year, to_date.month, to_date.day, 23, 59, 59,
+                       tzinfo=timezone.utc) - timedelta(hours=7)
+    user_arg = "" if user_filter == "(tất cả)" else user_filter
+
+    filtered = filter_by_date(events, start=start, end=end, user=user_arg)
+    if not filtered:
+        st.warning("Không có log nào khớp bộ lọc.")
+        return
+
+    total_cost_usd = sum(e.get("cost_usd", 0.0) for e in filtered)
+    total_cost_vnd = int(total_cost_usd * DEFAULT_USD_TO_VND)
+    total_prompt = sum(e.get("prompt_tokens", 0) for e in filtered)
+    total_output = sum(e.get("output_tokens", 0) for e in filtered)
+    unique_users = len({e.get("user", "") for e in filtered if e.get("user")})
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Tổng calls", len(filtered))
+    m2.metric("Chi phí (USD)", f"${total_cost_usd:.4f}")
+    m3.metric("Chi phí (VND)", f"{total_cost_vnd:,}đ")
+    m4.metric("Số user", unique_users)
+
+    st.caption(f"Tokens — input: {total_prompt:,} · output: {total_output:,}")
+
+    st.subheader(f"Theo {('ngày' if period == 'day' else 'tuần' if period == 'week' else 'tháng')}")
+    buckets = aggregate_by_period(filtered, period=period)
+    if buckets:
+        rows = []
+        for key in sorted(buckets.keys()):
+            b = buckets[key]
+            rows.append({
+                "Period": key,
+                "Calls": b["calls"],
+                "Users": len(b["users"]),
+                "Input tokens": b["prompt"],
+                "Output tokens": b["output"],
+                "Cost (USD)": round(b["cost_usd"], 4),
+                "Cost (VND)": int(b["cost_usd"] * DEFAULT_USD_TO_VND),
+            })
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+        chart_data = {row["Period"]: row["Cost (USD)"] for row in rows}
+        st.bar_chart(chart_data, height=200)
+
+    st.subheader("Theo user")
+    user_agg = aggregate_by_user(filtered)
+    if user_agg:
+        user_rows = []
+        for u, b in sorted(user_agg.items(), key=lambda kv: -kv[1]["cost_usd"]):
+            user_rows.append({
+                "User": u,
+                "Calls": b["calls"],
+                "Tokens (in/out)": f"{b['prompt']:,} / {b['output']:,}",
+                "Cost (USD)": round(b["cost_usd"], 4),
+                "Cost (VND)": int(b["cost_usd"] * DEFAULT_USD_TO_VND),
+                "Last activity": b["last_ts"].strftime("%Y-%m-%d %H:%M") if b["last_ts"] else "—",
+            })
+        st.dataframe(user_rows, use_container_width=True, hide_index=True)
+
+    st.subheader("Recent activity (50 dòng cuối)")
+    recent = list(reversed(filtered[-50:]))
+    recent_rows = []
+    for e in recent:
+        ts = e.get("ts", "")
+        try:
+            local = datetime.fromisoformat(ts.replace("Z", "+00:00")) + timedelta(hours=7)
+            ts_display = local.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            ts_display = ts
+        recent_rows.append({
+            "Time": ts_display,
+            "User": e.get("user", ""),
+            "Action": e.get("action", ""),
+            "Kind": e.get("kind", ""),
+            "Topic": (e.get("topic", "") or "")[:60],
+            "In tokens": e.get("prompt_tokens", 0),
+            "Out tokens": e.get("output_tokens", 0),
+            "Cost (USD)": round(e.get("cost_usd", 0.0), 5),
+        })
+    st.dataframe(recent_rows, use_container_width=True, hide_index=True)
+
+    ac1, ac2 = st.columns([1, 1])
+    with ac1:
+        csv_bytes = events_to_csv(filtered).encode("utf-8")
+        st.download_button(
+            "⬇️ Download CSV (filtered)",
+            data=csv_bytes,
+            file_name="usage_log.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with ac2:
+        if st.button("🗑️ Xóa toàn bộ log", use_container_width=True, type="secondary"):
+            clear_log()
+            st.success("Đã xóa log.")
+            st.rerun()
+
+
 def main() -> None:
     st.set_page_config(page_title="TTS Script Gen", layout="wide")
     _init_state()
     if not _check_auth():
         return
     st.title("🎙️ TTS Script Gen — Long-form Podcast Builder")
+    user_badge = st.session_state.get("username", "")
+    if user_badge:
+        st.caption(f"👤 Logged in as: **{user_badge}**")
     client = _get_client()
     cfg = _sidebar(client)
-    _step_outline(client, cfg)
-    st.divider()
-    _step_parts(client, cfg)
+    tab_gen, tab_stats = st.tabs(["🎙️ Generate", "📊 Stats & Lịch sử"])
+    with tab_gen:
+        _step_outline(client, cfg)
+        st.divider()
+        _step_parts(client, cfg)
+    with tab_stats:
+        _render_stats()
 
 
 if __name__ == "__main__":
