@@ -111,6 +111,14 @@ def _check_auth() -> bool:
             clean = (username or "").strip() or "anonymous"
             st.session_state["_authed"] = True
             st.session_state["username"] = clean
+            try:
+                log_event(
+                    kind="auth", action="login",
+                    prompt_tokens=0, output_tokens=0, cost_usd=0.0,
+                    user=clean, topic="",
+                )
+            except Exception:
+                pass
             st.rerun()
         else:
             st.error("Sai password.")
@@ -712,13 +720,59 @@ def _step_parts(client: genai.Client, cfg: dict) -> None:
 def _render_stats() -> None:
     st.header("📊 Lịch sử & Thống kê")
     st.caption(
-        f"Log file: `{log_path()}` — lưu mỗi request gen (text + TTS) với user/topic/tokens/cost."
+        f"Log file: `{log_path()}` — lưu mỗi request gen (text + TTS) + login events."
     )
 
     events = read_log()
     if not events:
         st.info("Chưa có log nào. Hãy gen 1 cái gì đó rồi quay lại tab này.")
         return
+
+    st.subheader("👥 Tất cả users (lifetime — không bị filter)")
+    lifetime_users = aggregate_by_user(events)
+    now_utc = datetime.now(timezone.utc)
+    today_local = (now_utc + timedelta(hours=7)).date()
+    week_start_local = today_local - timedelta(days=today_local.weekday())
+    month_start_local = today_local.replace(day=1)
+
+    active_today = set()
+    active_week = set()
+    active_month = set()
+    for e in events:
+        try:
+            ts = datetime.fromisoformat(e["ts"].replace("Z", "+00:00"))
+        except Exception:
+            continue
+        local_date = (ts + timedelta(hours=7)).date()
+        u = e.get("user", "") or "anonymous"
+        if local_date == today_local:
+            active_today.add(u)
+        if local_date >= week_start_local:
+            active_week.add(u)
+        if local_date >= month_start_local:
+            active_month.add(u)
+
+    um1, um2, um3, um4 = st.columns(4)
+    um1.metric("Tổng users", len(lifetime_users))
+    um2.metric("Active hôm nay", len(active_today))
+    um3.metric("Active tuần này", len(active_week))
+    um4.metric("Active tháng này", len(active_month))
+
+    lifetime_rows = []
+    for u, b in sorted(lifetime_users.items(), key=lambda kv: -kv[1]["cost_usd"]):
+        lifetime_rows.append({
+            "User": u,
+            "Calls": b["calls"],
+            "Tokens (in/out)": f"{b['prompt']:,} / {b['output']:,}",
+            "Cost (USD)": round(b["cost_usd"], 4),
+            "Cost (VND)": int(b["cost_usd"] * DEFAULT_USD_TO_VND),
+            "First seen": b["first_ts"].strftime("%Y-%m-%d %H:%M") if b["first_ts"] else "—",
+            "Last seen": b["last_ts"].strftime("%Y-%m-%d %H:%M") if b["last_ts"] else "—",
+        })
+    st.dataframe(lifetime_rows, use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.subheader("🔍 Filter chi tiết theo period / user / date")
 
     all_users = sorted({e.get("user", "anonymous") for e in events})
     fc1, fc2, fc3 = st.columns([1, 1, 2])
