@@ -469,27 +469,43 @@ def _sidebar(client: genai.Client) -> dict:
             if summary["calls"] == 0:
                 st.caption("Chưa có gen nào trong session này.")
             else:
-                mc1, mc2 = st.columns(2)
-                with mc1:
-                    st.metric("Tổng calls", summary["calls"])
-                    st.metric("Input tokens", f"{summary['total_prompt']:,}")
-                with mc2:
-                    st.metric(
-                        "Chi phí (USD)", f"${summary['total_cost_usd']:.4f}",
-                    )
-                    st.metric(
-                        "Chi phí (VND)", f"{summary['total_cost_vnd']:,}đ",
-                    )
-                st.caption(f"Output tokens: {summary['total_output']:,}")
-                if summary["by_kind"]:
-                    st.markdown("**Breakdown:**")
-                    for k, info in summary["by_kind"].items():
-                        kind_label = "📝 Text gen" if k == "text" else "🔊 TTS audio"
-                        st.markdown(
-                            f"- {kind_label}: {info['calls']} calls, "
-                            f"in {info['prompt']:,} / out {info['output']:,} tokens, "
-                            f"~${info['cost_usd']:.4f}"
-                        )
+                st.metric("Tổng chi phí session", f"${summary['total_cost_usd']:.4f}",
+                          f"{summary['total_cost_vnd']:,}đ")
+                st.caption(
+                    f"Tổng {summary['calls']} calls · "
+                    f"in {summary['total_prompt']:,} / out {summary['total_output']:,} tokens"
+                )
+
+                st.divider()
+                text_info = summary["by_kind"].get("text", {"prompt": 0, "output": 0, "cost_usd": 0.0, "calls": 0})
+                tts_info = summary["by_kind"].get("tts", {"prompt": 0, "output": 0, "cost_usd": 0.0, "calls": 0})
+                total_cost = max(summary["total_cost_usd"], 1e-9)
+                text_pct = text_info["cost_usd"] / total_cost * 100
+                tts_pct = tts_info["cost_usd"] / total_cost * 100
+
+                st.markdown(f"**📝 Script gen (text)** — {text_pct:.1f}% tổng")
+                sg1, sg2 = st.columns(2)
+                sg1.metric("Calls", text_info["calls"])
+                sg2.metric(
+                    "Cost",
+                    f"${text_info['cost_usd']:.4f}",
+                    f"{int(text_info['cost_usd'] * DEFAULT_USD_TO_VND):,}đ",
+                )
+                st.caption(
+                    f"Input: {text_info['prompt']:,} tokens · Output: {text_info['output']:,} tokens"
+                )
+
+                st.markdown(f"**🔊 Audio gen (TTS)** — {tts_pct:.1f}% tổng")
+                ag1, ag2 = st.columns(2)
+                ag1.metric("Calls", tts_info["calls"])
+                ag2.metric(
+                    "Cost",
+                    f"${tts_info['cost_usd']:.4f}",
+                    f"{int(tts_info['cost_usd'] * DEFAULT_USD_TO_VND):,}đ",
+                )
+                st.caption(
+                    f"Input: {tts_info['prompt']:,} tokens · Output (audio): {tts_info['output']:,} tokens"
+                )
             if st.button("🗑️ Reset usage log", use_container_width=True):
                 st.session_state["usage_log"] = []
                 st.rerun()
@@ -816,6 +832,40 @@ def _render_stats() -> None:
     m4.metric("Số user", unique_users)
 
     st.caption(f"Tokens — input: {total_prompt:,} · output: {total_output:,}")
+
+    text_events = [e for e in filtered if e.get("kind") == "text"]
+    tts_events = [e for e in filtered if e.get("kind") == "tts"]
+
+    bc1, bc2 = st.columns(2)
+    with bc1:
+        text_cost = sum(e.get("cost_usd", 0.0) for e in text_events)
+        text_prompt = sum(e.get("prompt_tokens", 0) for e in text_events)
+        text_output = sum(e.get("output_tokens", 0) for e in text_events)
+        pct = (text_cost / total_cost_usd * 100) if total_cost_usd > 0 else 0
+        st.markdown(f"### 📝 Script gen (text) — {pct:.1f}% tổng")
+        sc1, sc2 = st.columns(2)
+        sc1.metric("Calls", len(text_events))
+        sc2.metric(
+            "Cost",
+            f"${text_cost:.4f}",
+            f"{int(text_cost * DEFAULT_USD_TO_VND):,}đ",
+        )
+        st.caption(f"Input: {text_prompt:,} · Output: {text_output:,} tokens")
+
+    with bc2:
+        tts_cost = sum(e.get("cost_usd", 0.0) for e in tts_events)
+        tts_prompt = sum(e.get("prompt_tokens", 0) for e in tts_events)
+        tts_output = sum(e.get("output_tokens", 0) for e in tts_events)
+        pct = (tts_cost / total_cost_usd * 100) if total_cost_usd > 0 else 0
+        st.markdown(f"### 🔊 Audio gen (TTS) — {pct:.1f}% tổng")
+        ac1, ac2 = st.columns(2)
+        ac1.metric("Calls", len(tts_events))
+        ac2.metric(
+            "Cost",
+            f"${tts_cost:.4f}",
+            f"{int(tts_cost * DEFAULT_USD_TO_VND):,}đ",
+        )
+        st.caption(f"Input: {tts_prompt:,} · Output (audio): {tts_output:,} tokens")
 
     st.subheader(f"Theo {('ngày' if period == 'day' else 'tuần' if period == 'week' else 'tháng')}")
     buckets = aggregate_by_period(filtered, period=period)
