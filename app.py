@@ -890,6 +890,16 @@ def _render_stats() -> None:
             st.rerun()
 
 
+def _is_admin() -> bool:
+    admin_secret = _read_secret("ADMIN_USERS")
+    admins = {
+        u.strip().lower()
+        for u in (admin_secret or "admin").split(",")
+        if u.strip()
+    }
+    return (st.session_state.get("username", "") or "").lower() in admins
+
+
 def main() -> None:
     st.set_page_config(page_title="TTS Script Gen", layout="wide")
     _init_state()
@@ -898,16 +908,23 @@ def main() -> None:
     st.title("🎙️ TTS Script Gen — Long-form Podcast Builder")
     user_badge = st.session_state.get("username", "")
     if user_badge:
-        st.caption(f"👤 Logged in as: **{user_badge}**")
+        admin_badge = " · 🛡️ admin" if _is_admin() else ""
+        st.caption(f"👤 Logged in as: **{user_badge}**{admin_badge}")
     client = _get_client()
     cfg = _sidebar(client)
-    tab_gen, tab_stats = st.tabs(["🎙️ Generate", "📊 Stats & Lịch sử"])
-    with tab_gen:
+
+    if _is_admin():
+        tab_gen, tab_stats = st.tabs(["🎙️ Generate", "📊 Stats & Lịch sử"])
+        with tab_gen:
+            _step_outline(client, cfg)
+            st.divider()
+            _step_parts(client, cfg)
+        with tab_stats:
+            _render_stats()
+    else:
         _step_outline(client, cfg)
         st.divider()
         _step_parts(client, cfg)
-    with tab_stats:
-        _render_stats()
 
 
 if __name__ == "__main__":
