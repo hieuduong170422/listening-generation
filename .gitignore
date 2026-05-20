@@ -10,4 +10,10 @@ history/*.srt
 history/*.json
 history/*.jsonl
 !history/.gitkeep
+uploads/*
+!uploads/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+logs/
 .DS_Store

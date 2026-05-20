@@ -1,11 +1,11 @@
-# TTS Script Gen
+# Audivy Studio
 
-Tool sinh kịch bản đối thoại 2 người + render thành audio bằng Gemini API.
-Bạn chỉ cần nhập **chủ đề**, tool sẽ:
+Streamlit app gộp 2 công cụ AI dùng Gemini:
 
-1. Gọi Gemini sinh kịch bản (`Speaker1` / `Speaker2`).
-2. Gọi Gemini multi-speaker TTS render thành file WAV.
-3. Lưu cả `.wav` + `.txt` transcript vào `history/`.
+1. **🎙️ TTS Script Gen** — sinh kịch bản hội thoại long-form + render audio (podcast học ngoại ngữ).
+2. **📋 Prompt Templates** — tạo / quản lý / chạy các prompt template tái sử dụng với `{{placeholder}}`.
+
+Cả 2 chạy chung 1 app, 1 login, điều hướng bằng menu sidebar.
 
 ## Setup
 
@@ -14,44 +14,59 @@ cd ~/Desktop/tts-script-gen
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Mở .env, dán GEMINI_API_KEY (lấy ở https://aistudio.google.com/app/apikey)
+# Mở .env, dán GEMINI_API_KEY (lấy ở https://aistudio.google.com/apikey)
 ```
 
-## Dùng tương tác
+## Chạy
 
 ```bash
-python main.py
-# → Nhập chủ đề
-# → Chọn style (podcast / interview / debate)
-# → Tool tự sinh + render
+streamlit run app.py
 ```
 
-## Dùng qua CLI
-
-```bash
-python main.py --topic "Trí tuệ nhân tạo trong giáo dục" --style podcast
-python main.py --topic "Bitcoin có phải bong bóng?" --style debate \
-  --speaker1 Leda --speaker2 Iapetus \
-  --out output/btc.wav
-```
-
-## Đổi giọng đọc
-
-Speaker mặc định: **Leda** (Speaker1) + **Iapetus** (Speaker2).
-Danh sách 30 voice xem trong [config.py](config.py).
-
-## Đổi style hoặc thêm style mới
-
-Mở [config.py](config.py), sửa `STYLES` dict — thêm `Style(...)` mới với `instruction` riêng.
-
-## File output
-
-- `history/<topic-slug>_<timestamp>.wav` — audio
-- `history/<topic-slug>_<timestamp>.txt` — transcript
+→ Mở `http://localhost:8501`. Đăng nhập (nếu có `APP_PASSWORD`), rồi chọn trang từ sidebar.
 
 ## Cấu trúc
 
-- [config.py](config.py) — voices + styles
-- [script_generator.py](script_generator.py) — topic → dialogue script
-- [tts_renderer.py](tts_renderer.py) — script → WAV (multi-speaker)
-- [main.py](main.py) — CLI entry
+```
+app.py                  → Entry: load .env, init DB, auth gate, st.navigation
+auth.py                 → Login + admin check (dùng chung)
+paths.py                → ROOT / HISTORY_DIR / UPLOADS_DIR
+
+pages/
+  ├── tts_studio.py      → TTS Script Gen (Generate + Stats tabs)
+  ├── pt_home.py         → Prompt Templates: danh sách + CRUD
+  ├── pt_create.py       → Tạo / sửa template
+  ├── pt_run.py          → Chạy template → điền form → gọi API
+  └── pt_history.py      → Lịch sử chạy template
+
+# TTS Script Gen modules (flat at root)
+config.py, script_generator.py, outline_generator.py,
+tts_renderer.py, multi_part.py, topic_suggester.py,
+api_utils.py, usage_logger.py
+
+prompt_template/         → Package cho Prompt Templates
+  ├── database.py        → SQLite schema (templates.db)
+  ├── template_store.py  → CRUD template
+  ├── history_store.py   → Lưu lịch sử chạy
+  ├── llm_client.py      → Facade google-genai / openai / dashscope
+  └── gemini_client.py   → Gemini wrapper
+
+history/                 → Output TTS (.wav, .txt) + usage log
+uploads/                 → File upload khi chạy template
+templates.db             → SQLite (gitignored)
+```
+
+## Biến môi trường
+
+| Biến | Bắt buộc | Mô tả |
+|------|----------|-------|
+| `GEMINI_API_KEY` | ✅ | Key Gemini, dùng cho cả 2 feature |
+| `APP_PASSWORD` | — | Password gate toàn app. Trống = không cần login |
+| `ADMIN_USERS` | — | Username (phẩy) được xem tab Stats của TTS. Mặc định `admin` |
+| `SDK` | — | Prompt Templates: `google-genai` (mặc định) / `openai` / `dashscope` |
+
+## Deploy
+
+Streamlit Community Cloud — entry point `app.py`. Đặt `GEMINI_API_KEY`, `APP_PASSWORD`,
+`ADMIN_USERS` trong Secrets. Lưu ý disk ephemeral: `templates.db` + `history/` mất khi
+app restart — download định kỳ nếu cần lưu trữ.
