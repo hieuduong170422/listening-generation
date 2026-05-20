@@ -7,7 +7,7 @@ load_dotenv(ROOT / ".env")
 
 st.set_page_config(page_title="Audivy Studio", layout="wide")
 
-from auth import apply_api_key_env, check_auth, render_api_key_box
+from auth import apply_api_key_env, check_auth, is_admin, render_api_key_box
 from prompt_template.database import init_db
 
 # Ensure prompt-template tables exist (SQLite file created on first run).
@@ -21,7 +21,10 @@ if not check_auth():
 
 # Make a runtime-entered key visible to all clients (os.getenv based).
 apply_api_key_env()
-render_api_key_box()
+# Only admins can see / edit the API key. Non-admins still use the key
+# the admin entered (it persists process-wide via os.environ).
+if is_admin():
+    render_api_key_box()
 
 _pages = [
     st.Page("pages/tts_studio.py", title="Tạo Podcast (TTS)", icon="🎙️", default=True),
