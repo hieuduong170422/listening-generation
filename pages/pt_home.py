@@ -16,16 +16,25 @@ with tcol:
 with bcol:
     st.write("")
     st.write("")
-    if st.button("Create", type="primary"):
+    if st.button("➕ Tạo template", type="primary", use_container_width=True):
         st.session_state.pop("_edit_tid", None)
         st.switch_page("pages/pt_create.py")
 
-st.markdown("Create and run reusable AI prompt templates with Gemini.")
+st.markdown("Tạo & chạy các prompt AI tái sử dụng với `{{biến}}` điền động.")
 
 templates = list_templates()
 
 if not templates:
-    st.info("No templates yet. Create your first template!")
+    st.info(
+        "**Chưa có template nào.** Bắt đầu nhanh:\n\n"
+        "1. Bấm **➕ Tạo template** ở góc phải trên.\n"
+        "2. Viết system prompt, dùng `{{tên_biến}}` cho chỗ cần điền.\n"
+        "3. Thêm input field khớp mỗi `{{biến}}`.\n"
+        "4. Lưu xong → sang **🚀 Run Template** để chạy thử."
+    )
+    if st.button("➕ Tạo template đầu tiên", type="primary"):
+        st.session_state.pop("_edit_tid", None)
+        st.switch_page("pages/pt_create.py")
     st.stop()
 
 # Pagination

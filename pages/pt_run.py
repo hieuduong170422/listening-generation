@@ -1,6 +1,5 @@
 """Run Template page — select a template, fill in fields, call Gemini, see results."""
 
-import json
 import os
 import re
 
@@ -10,14 +9,14 @@ from prompt_template.llm_client import generate
 from prompt_template.history_store import save_execution
 from prompt_template.template_store import get_template, list_templates
 
-st.title("▶️ Run Prompt Template")
+st.title("🚀 Chạy Prompt Template")
 
 # ── Template Selector ──────────────────────────────────────────────────────
 
 templates = list_templates()
 if not templates:
-    st.info("No templates yet. Create a template first!")
-    if st.button("+ Create Template"):
+    st.info("Chưa có template nào. Tạo template đầu tiên để bắt đầu.")
+    if st.button("➕ Tạo template", type="primary"):
         st.switch_page("pages/pt_create.py")
     st.stop()
 
@@ -30,7 +29,9 @@ if _preselect is not None:
         if template_options[_n] == _preselect:
             _idx = _i
             break
-selected_name = st.selectbox("Select Template", options=_names, index=_idx)
+
+st.caption("**Bước 1** — Chọn template")
+selected_name = st.selectbox("Template", options=_names, index=_idx, label_visibility="collapsed")
 
 if not selected_name:
     st.stop()
@@ -39,52 +40,50 @@ template_id = template_options[selected_name]
 template = get_template(template_id)
 
 if not template:
-    st.error("Template not found.")
+    st.error("Không tìm thấy template.")
     st.stop()
 
 system_prompt = template.get("system_prompt", "")
-prompt_preview = system_prompt[:200]
-if len(system_prompt) > 200:
-    prompt_preview += "…"
-st.markdown(f"**System Prompt:** `{prompt_preview}`")
+with st.expander("👁️ Xem system prompt của template này", expanded=False):
+    st.code(system_prompt or "(trống)", language="text")
+ic1, ic2 = st.columns(2)
+ic1.caption(f"🤖 Model: `{template['model']}`")
+ic2.caption(f"🌡️ Temperature: `{template['temperature']}`")
+
+st.divider()
 
 # ── Dynamic Form Rendering ─────────────────────────────────────────────────
 
-st.subheader("Input Values")
+st.caption("**Bước 2** — Điền thông tin")
+
+inputs = template.get("inputs", [])
+if not inputs:
+    st.info("Template này không có input field nào — bấm Chạy luôn.")
 
 user_values = {}
 uploaded_files = []
 
-for field in template.get("inputs", []):
+for field in inputs:
     field_key = f"field_{field['id']}"
-    label = field["label"]
+    label = field["label"] or field["key"]
     required = bool(field.get("required", 0))
     placeholder = field.get("placeholder", "")
+    label_display = f"{label} {'*' if required else ''}".strip()
 
     if field["type"] == "TEXT":
-        val = st.text_input(
-            label,
-            key=field_key,
-            placeholder=placeholder,
-            help="Required" if required else "",
+        user_values[field["key"]] = st.text_input(
+            label_display, key=field_key, placeholder=placeholder,
         )
-        user_values[field["key"]] = val
 
     elif field["type"] == "TEXTAREA":
-        val = st.text_area(
-            label,
-            key=field_key,
-            placeholder=placeholder,
-            help="Required" if required else "",
+        user_values[field["key"]] = st.text_area(
+            label_display, key=field_key, placeholder=placeholder,
         )
-        user_values[field["key"]] = val
 
     elif field["type"] == "IMAGE":
         uploaded = st.file_uploader(
-            label,
-            key=field_key,
+            label_display, key=field_key,
             type=["png", "jpg", "jpeg", "gif", "webp"],
-            help="Required" if required else "",
         )
         if uploaded:
             file_path = os.path.join("uploads", uploaded.name)
@@ -92,44 +91,43 @@ for field in template.get("inputs", []):
                 f.write(uploaded.getbuffer())
             uploaded_files.append(file_path)
             user_values[field["key"]] = f"[Image: {uploaded.name}]"
+            pc1, pc2 = st.columns([1, 2])
+            with pc1:
+                st.image(uploaded, use_container_width=True)
+            with pc2:
+                size_kb = len(uploaded.getvalue()) / 1024
+                st.caption(f"🖼️ **{uploaded.name}**")
+                st.caption(f"Dung lượng: {size_kb:.0f} KB")
+                st.caption("✅ Ảnh đã sẵn sàng để gửi.")
 
     elif field["type"] == "FILE":
-        uploaded = st.file_uploader(
-            label,
-            key=field_key,
-            help="Required" if required else "",
-        )
+        uploaded = st.file_uploader(label_display, key=field_key)
         if uploaded:
             file_path = os.path.join("uploads", uploaded.name)
             with open(file_path, "wb") as f:
                 f.write(uploaded.getbuffer())
             uploaded_files.append(file_path)
             user_values[field["key"]] = f"[File: {uploaded.name}]"
+            size_kb = len(uploaded.getvalue()) / 1024
+            st.caption(f"📄 **{uploaded.name}** — {size_kb:.0f} KB ✅")
 
     elif field["type"] == "NUMBER":
-        val = st.number_input(
-            label,
-            key=field_key,
-            help="Required" if required else "",
+        user_values[field["key"]] = str(
+            st.number_input(label_display, key=field_key)
         )
-        user_values[field["key"]] = str(val)
 
     elif field["type"] == "BOOLEAN":
-        val = st.checkbox(label, key=field_key)
-        user_values[field["key"]] = str(val)
+        user_values[field["key"]] = str(st.checkbox(label_display, key=field_key))
 
     elif field["type"] == "SELECT":
         options_raw = field.get("select_options", "")
         options = (
             [ln.strip() for ln in options_raw.split("\n") if ln.strip()]
-            if options_raw
-            else []
+            if options_raw else []
         )
-        if options:
-            val = st.selectbox(label, options, key=field_key)
-        else:
-            val = st.selectbox(label, ["(no options)"], key=field_key)
-        user_values[field["key"]] = val
+        user_values[field["key"]] = st.selectbox(
+            label_display, options or ["(no options)"], key=field_key,
+        )
 
 # ── Variable Replacement ────────────────────────────────────────────────────
 
@@ -146,11 +144,14 @@ def replace_variables(prompt: str, values: dict) -> str:
 
 # ── Run Button ──────────────────────────────────────────────────────────────
 
-if st.button("🚀 Run", type="primary"):
+st.divider()
+st.caption("**Bước 3** — Chạy")
+
+if st.button("🚀 Chạy template", type="primary", use_container_width=True):
     errors = []
-    for field in template.get("inputs", []):
+    for field in inputs:
         if field.get("required") and not user_values.get(field["key"], "").strip():
-            errors.append(f"'{field['label']}' is required.")
+            errors.append(f"'{field['label']}' là bắt buộc.")
 
     if errors:
         for err in errors:
@@ -160,7 +161,7 @@ if st.button("🚀 Run", type="primary"):
             template.get("system_prompt", ""), user_values
         )
 
-        with st.spinner("Calling Gemini API..."):
+        with st.spinner("Đang gọi Gemini API..."):
             try:
                 result = generate(
                     system_prompt=template.get("system_prompt", ""),
@@ -170,8 +171,8 @@ if st.button("🚀 Run", type="primary"):
                     files=uploaded_files if uploaded_files else None,
                 )
 
-                # ── Display Result ──
-                st.subheader("Response")
+                st.divider()
+                st.subheader("✨ Kết quả")
                 if result["type"] == "text":
                     st.markdown(result["text"])
                 elif result["type"] == "image":
@@ -185,11 +186,9 @@ if st.button("🚀 Run", type="primary"):
                     st.text(result["text"])
 
                 st.caption(
-                    f"Model: {template['model']} | "
-                    f"Temperature: {template['temperature']}"
+                    f"Model: {template['model']} · Temperature: {template['temperature']}"
                 )
 
-                # ── Save to History ──
                 save_execution(
                     template_id=template_id,
                     template_name=template["name"],
@@ -200,11 +199,11 @@ if st.button("🚀 Run", type="primary"):
                     model=template["model"],
                     temperature=template["temperature"],
                 )
-                st.success("Execution saved to history.")
+                st.success("✅ Đã lưu vào lịch sử.")
 
             except ValueError as e:
                 st.error(str(e))
             except RuntimeError as e:
-                st.error(f"API Error: {e}")
+                st.error(f"Lỗi API: {e}")
             except Exception as e:
-                st.error(f"Unexpected error: {e}")
+                st.error(f"Lỗi không xác định: {e}")

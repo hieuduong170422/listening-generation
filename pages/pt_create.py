@@ -2,7 +2,11 @@ import streamlit as st
 from prompt_template.template_store import create_template, get_template, update_template
 from prompt_template.llm_client import AVAILABLE_MODELS
 
-st.title("Create / Edit Template")
+st.title("➕ Tạo / Sửa Template")
+st.caption(
+    "Viết **System Prompt**, dùng `{{tên_biến}}` cho chỗ cần điền động. "
+    "Mỗi `{{biến}}` cần 1 **Input Field** ở dưới có Key trùng tên. Lưu xong sang trang Run để chạy."
+)
 
 # Template ID is passed via session_state by the Edit button in app.py.
 # Must read BEFORE the first rerun trigger so is_edit remains stable.

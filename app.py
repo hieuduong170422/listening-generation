@@ -20,18 +20,18 @@ if not check_auth():
     st.stop()
 
 _pages = [
-    st.Page("pages/tts_studio.py", title="TTS Script Gen", icon="🎙️", default=True),
-    st.Page("pages/pt_home.py", title="Prompt Templates", icon="📋"),
-    st.Page("pages/pt_create.py", title="Create Template", icon="➕"),
-    st.Page("pages/pt_run.py", title="Run Template", icon="🚀"),
-    st.Page("pages/pt_history.py", title="Template History", icon="📜"),
+    st.Page("pages/tts_studio.py", title="Tạo Podcast (TTS)", icon="🎙️", default=True),
+    st.Page("pages/pt_home.py", title="Danh sách Template", icon="📋"),
+    st.Page("pages/pt_create.py", title="Tạo Template", icon="➕"),
+    st.Page("pages/pt_run.py", title="Chạy Template", icon="🚀"),
+    st.Page("pages/pt_history.py", title="Lịch sử Template", icon="📜"),
 ]
 _icons = {
-    "TTS Script Gen": "🎙️",
-    "Prompt Templates": "📋",
-    "Create Template": "➕",
-    "Run Template": "🚀",
-    "Template History": "📜",
+    "Tạo Podcast (TTS)": "🎙️",
+    "Danh sách Template": "📋",
+    "Tạo Template": "➕",
+    "Chạy Template": "🚀",
+    "Lịch sử Template": "📜",
 }
 
 # Hidden built-in nav — we drive navigation with our own dropdown.
