@@ -26,5 +26,32 @@ _pages = [
     st.Page("pages/pt_run.py", title="Run Template", icon="🚀"),
     st.Page("pages/pt_history.py", title="Template History", icon="📜"),
 ]
+_icons = {
+    "TTS Script Gen": "🎙️",
+    "Prompt Templates": "📋",
+    "Create Template": "➕",
+    "Run Template": "🚀",
+    "Template History": "📜",
+}
 
-st.navigation(_pages).run()
+# Hidden built-in nav — we drive navigation with our own dropdown.
+current = st.navigation(_pages, position="hidden")
+
+titles = [p.title for p in _pages]
+current_idx = titles.index(current.title) if current.title in titles else 0
+
+nav_col, _ = st.columns([1, 2])
+with nav_col:
+    choice = st.selectbox(
+        "🧭 Công cụ",
+        titles,
+        index=current_idx,
+        format_func=lambda t: f"{_icons.get(t, '')} {t}".strip(),
+        key="_nav_dropdown",
+    )
+
+if choice != current.title:
+    st.switch_page(_pages[titles.index(choice)])
+
+st.divider()
+current.run()
