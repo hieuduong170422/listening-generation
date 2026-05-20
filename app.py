@@ -7,7 +7,7 @@ load_dotenv(ROOT / ".env")
 
 st.set_page_config(page_title="Audivy Studio", layout="wide")
 
-from auth import check_auth
+from auth import apply_api_key_env, check_auth, render_api_key_box
 from prompt_template.database import init_db
 
 # Ensure prompt-template tables exist (SQLite file created on first run).
@@ -18,6 +18,10 @@ except Exception as e:  # pragma: no cover - surfaced in UI
 
 if not check_auth():
     st.stop()
+
+# Make a runtime-entered key visible to all clients (os.getenv based).
+apply_api_key_env()
+render_api_key_box()
 
 _pages = [
     st.Page("pages/tts_studio.py", title="Tạo Podcast (TTS)", icon="🎙️", default=True),

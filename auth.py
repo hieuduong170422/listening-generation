@@ -15,6 +15,49 @@ def read_secret(key: str) -> str:
     return os.getenv(key, "")
 
 
+def get_api_key() -> str:
+    """Gemini API key — priority: session override > secrets/.env."""
+    override = (st.session_state.get("_api_key_override") or "").strip()
+    if override:
+        return override
+    return read_secret("GEMINI_API_KEY") or read_secret("API_KEY")
+
+
+def apply_api_key_env() -> None:
+    """Push the session-overridden key into os.environ so all clients see it."""
+    override = (st.session_state.get("_api_key_override") or "").strip()
+    if override:
+        os.environ["GEMINI_API_KEY"] = override
+        os.environ["API_KEY"] = override
+
+
+def render_api_key_box() -> None:
+    """Sidebar widget to enter / override the Gemini API key at runtime."""
+    with st.sidebar:
+        current = get_api_key()
+        with st.expander("🔑 API Key", expanded=not current):
+            if current:
+                st.success(f"✅ Đang dùng key …{current[-4:]}")
+            else:
+                st.warning("⚠️ Chưa có API key. Nhập bên dưới để dùng app.")
+            new_key = st.text_input(
+                "Gemini API Key",
+                type="password",
+                value=st.session_state.get("_api_key_override", ""),
+                key="_api_key_input",
+                help="Lấy tại https://aistudio.google.com/apikey",
+            )
+            bc1, bc2 = st.columns(2)
+            if bc1.button("💾 Lưu", key="_save_api_key", use_container_width=True):
+                st.session_state["_api_key_override"] = (new_key or "").strip()
+                apply_api_key_env()
+                st.rerun()
+            if bc2.button("🗑️ Xoá", key="_clear_api_key", use_container_width=True):
+                st.session_state["_api_key_override"] = ""
+                st.rerun()
+            st.caption("Key lưu trong session trình duyệt, không ghi ra file.")
+
+
 def is_admin() -> bool:
     admin_secret = read_secret("ADMIN_USERS")
     admins = {

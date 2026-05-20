@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 import streamlit as st
 from google import genai
 
+from auth import get_api_key as _get_api_key
 from auth import is_admin as _is_admin
-from auth import read_secret as _read_secret
 from paths import HISTORY_DIR
 from config import (
     AUDIENCE_LEVELS,
@@ -53,9 +53,9 @@ def _slug(text: str, max_len: int = 40) -> str:
 
 
 def _get_client() -> genai.Client:
-    api_key = _read_secret("GEMINI_API_KEY")
+    api_key = _get_api_key()
     if not api_key:
-        st.error("Thiếu GEMINI_API_KEY (kiểm tra .env hoặc Streamlit secrets).")
+        st.error("Thiếu API key — nhập vào ô **🔑 API Key** ở đầu sidebar.")
         st.stop()
     return genai.Client(api_key=api_key)
 
