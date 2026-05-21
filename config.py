@@ -82,7 +82,7 @@ TONES: dict[str, str] = {
 }
 DEFAULT_TONE = "warm_friendly"
 
-DURATION_PRESETS: list[int] = [5, 10, 15, 20, 30, 45, 60]
+DURATION_PRESETS: list[int] = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60]
 DEFAULT_TOTAL_MINUTES = 20
 
 SPEECH_PACES: dict[str, str] = {
