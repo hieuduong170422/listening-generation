@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import streamlit as st
 from google import genai
@@ -8,6 +9,8 @@ from google import genai
 from auth import get_api_key as _get_api_key
 from auth import is_admin as _is_admin
 from paths import HISTORY_DIR
+from image_generator import generate_part_image
+from video_builder import build_part_video, concat_videos, ffmpeg_available
 from config import (
     AUDIENCE_LEVELS,
     AVAILABLE_VOICES,
@@ -84,6 +87,9 @@ def _init_state() -> None:
         "outline_dict": None,
         "scripts": {},
         "audio_paths": {},
+        "image_paths": {},
+        "video_paths": {},
+        "full_video_path": None,
         "base_slug": None,
         "cancel": False,
         "usage_log": [],
@@ -465,10 +471,12 @@ def _sidebar(client: genai.Client) -> dict:
 
         st.divider()
         if st.button("🔄 Reset session", use_container_width=True):
-            for k in ("outline", "outline_dict", "base_slug"):
+            for k in ("outline", "outline_dict", "base_slug", "full_video_path"):
                 st.session_state[k] = None
             st.session_state["scripts"] = {}
             st.session_state["audio_paths"] = {}
+            st.session_state["image_paths"] = {}
+            st.session_state["video_paths"] = {}
             st.session_state["cancel"] = False
             st.session_state["usage_log"] = []
             for k in list(st.session_state.keys()):
@@ -523,6 +531,9 @@ def _step_outline(client: genai.Client, cfg: dict) -> None:
                 )
                 st.session_state["scripts"] = {}
                 st.session_state["audio_paths"] = {}
+                st.session_state["image_paths"] = {}
+                st.session_state["video_paths"] = {}
+                st.session_state["full_video_path"] = None
                 for k in list(st.session_state.keys()):
                     if k.startswith("script_text_"):
                         del st.session_state[k]
@@ -617,6 +628,8 @@ def _step_parts(client: genai.Client, cfg: dict) -> None:
         progress.progress(1.0, text="Hoàn tất.")
         st.success(f"✓ Đã render thêm {ok_count} audio. Cuộn xuống xem player.")
 
+    _render_full_video_bar(outline, base_slug)
+
     for part in outline.parts:
         has_script = part.index in st.session_state["scripts"]
         has_audio = part.index in st.session_state["audio_paths"]
@@ -684,6 +697,109 @@ def _step_parts(client: genai.Client, cfg: dict) -> None:
                 wav_path = st.session_state["audio_paths"][part.index]
                 st.audio(wav_path)
                 st.caption(f"📁 `{wav_path}`")
+                _render_part_video(part, base_slug)
+
+
+def _render_full_video_bar(outline: Outline, base_slug: str) -> None:
+    """Thanh ghép tất cả part-video thành 1 video full."""
+    total = len(outline.parts)
+    n_videos = len(st.session_state["video_paths"])
+    if not ffmpeg_available():
+        st.warning("⚠️ Chưa cài **ffmpeg** — chạy `brew install ffmpeg` để dùng tính năng video.")
+        return
+    if n_videos == 0:
+        return
+
+    st.caption(f"🎬 Video: **{n_videos}/{total}** part đã có MP4")
+    can_concat = n_videos == total and total > 0
+    if st.button(
+        "🎬 Ghép video full", type="primary", disabled=not can_concat,
+        help="Cần tất cả part đều đã tạo video MP4.",
+    ):
+        with st.spinner("Đang ghép video full..."):
+            try:
+                ordered = [
+                    Path(st.session_state["video_paths"][p.index])
+                    for p in outline.parts
+                    if p.index in st.session_state["video_paths"]
+                ]
+                full_path = HISTORY_DIR / f"{base_slug}_full.mp4"
+                concat_videos(ordered, full_path)
+                st.session_state["full_video_path"] = str(full_path)
+                st.success(f"✓ Video full: `{full_path}`")
+            except Exception as e:
+                st.error(f"Lỗi ghép video: {e}")
+
+    full = st.session_state.get("full_video_path")
+    if full and Path(full).exists():
+        st.video(full)
+        with open(full, "rb") as f:
+            st.download_button(
+                "⬇️ Download video full (.mp4)", data=f,
+                file_name=Path(full).name, mime="video/mp4",
+            )
+    st.divider()
+
+
+def _render_part_video(part: PartBrief, base_slug: str) -> None:
+    """Khối gen ảnh + tạo video MP4 cho 1 part (hiện dưới audio player)."""
+    idx = part.index
+    has_image = idx in st.session_state["image_paths"]
+    has_video = idx in st.session_state["video_paths"]
+
+    st.markdown("**🎬 Video**")
+    vc1, vc2 = st.columns(2)
+    gen_img = vc1.button(
+        "🎨 Gen ảnh" if not has_image else "🔁 Gen lại ảnh",
+        key=f"genimg_{idx}", use_container_width=True,
+    )
+    build_vid = vc2.button(
+        "🎬 Tạo video", key=f"buildvid_{idx}",
+        disabled=not has_image, use_container_width=True,
+    )
+
+    if gen_img:
+        with st.spinner(f"Đang vẽ ảnh Part {idx}..."):
+            try:
+                client = _get_client()
+                img_path = HISTORY_DIR / f"{base_slug}_part{idx}.png"
+                before = len(st.session_state.get("usage_log") or [])
+                generate_part_image(
+                    client,
+                    topic=st.session_state["outline"].topic,
+                    part_title=part.title,
+                    part_summary=part.summary,
+                    out_path=img_path,
+                    usage_store=st.session_state.get("usage_log"),
+                )
+                _persist_usage(f"image_part{idx}", st.session_state["outline"].topic, before)
+                st.session_state["image_paths"][idx] = str(img_path)
+                st.session_state["video_paths"].pop(idx, None)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Lỗi gen ảnh: {e}")
+
+    if has_image:
+        st.image(st.session_state["image_paths"][idx], use_container_width=True)
+
+    if build_vid:
+        with st.spinner(f"Đang ghép video Part {idx}..."):
+            try:
+                video_path = HISTORY_DIR / f"{base_slug}_part{idx}.mp4"
+                build_part_video(
+                    image_path=Path(st.session_state["image_paths"][idx]),
+                    audio_path=Path(st.session_state["audio_paths"][idx]),
+                    out_path=video_path,
+                )
+                st.session_state["video_paths"][idx] = str(video_path)
+                st.session_state["full_video_path"] = None
+                st.rerun()
+            except Exception as e:
+                st.error(f"Lỗi tạo video: {e}")
+
+    if has_video:
+        st.video(st.session_state["video_paths"][idx])
+        st.caption(f"🎬 `{st.session_state['video_paths'][idx]}`")
 
 
 def _render_stats() -> None:

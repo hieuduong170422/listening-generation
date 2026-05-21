@@ -9,6 +9,8 @@ history/*.txt
 history/*.srt
 history/*.json
 history/*.jsonl
+history/*.png
+history/*.mp4
 !history/.gitkeep
 uploads/*
 !uploads/.gitkeep

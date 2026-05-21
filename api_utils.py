@@ -6,6 +6,8 @@ TEXT_INPUT_PRICE_PER_TOKEN = 0.075 / 1_000_000
 TEXT_OUTPUT_PRICE_PER_TOKEN = 0.30 / 1_000_000
 TTS_INPUT_PRICE_PER_TOKEN = 0.50 / 1_000_000
 TTS_OUTPUT_PRICE_PER_TOKEN = 10.0 / 1_000_000
+IMAGE_INPUT_PRICE_PER_TOKEN = 0.30 / 1_000_000
+IMAGE_OUTPUT_PRICE_PER_TOKEN = 30.0 / 1_000_000
 DEFAULT_USD_TO_VND = 25500
 
 
@@ -20,6 +22,11 @@ def extract_response_usage(response: Any, kind: str) -> dict:
         cost = (
             prompt * TTS_INPUT_PRICE_PER_TOKEN
             + output * TTS_OUTPUT_PRICE_PER_TOKEN
+        )
+    elif kind == "image":
+        cost = (
+            prompt * IMAGE_INPUT_PRICE_PER_TOKEN
+            + output * IMAGE_OUTPUT_PRICE_PER_TOKEN
         )
     else:
         cost = (
