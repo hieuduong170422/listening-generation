@@ -123,10 +123,12 @@ def generate_part_script(
         raise ValueError(f"Style không hợp lệ: {style_key}. Chọn 1 trong {list(STYLES)}")
 
     style = STYLES[style_key]
-    target_words = target_minutes * 180
-    min_words = target_minutes * 160
-    target_lines_low = max(24, target_minutes * 16)
-    target_lines_high = target_minutes * 22
+    # ~150 spoken words ≈ 1 minute of audio. Aim at the target, allow ±15%.
+    target_words = target_minutes * 150
+    min_words = round(target_words * 0.85)
+    max_words = round(target_words * 1.15)
+    target_lines_low = max(6, round(target_minutes * 9))
+    target_lines_high = max(target_lines_low + 3, round(target_minutes * 14))
 
     bullets = "\n".join(f"- {kp}" for kp in key_points)
     prev_recap = (
@@ -277,16 +279,14 @@ def generate_part_script(
         f"{branding_block}"
         f"OVERALL TOPIC: {topic}\n"
         f"This is Part {part_index} of {total_parts}.\n\n"
-        "LENGTH (HARD REQUIREMENT — DO NOT UNDER-DELIVER):\n"
-        f"- Target audio length: ~{target_minutes} minutes when read at a normal English podcast pace.\n"
-        f"- TARGET word count: ~{target_words} spoken words.\n"
-        f"- MINIMUM word count: {min_words} words. Going below this is a failure.\n"
-        f"- Aim for {target_lines_low}-{target_lines_high} dialogue turns.\n"
-        "- If you cover all key points before reaching the minimum length, KEEP GOING — add a deeper example, "
-        "a relatable anecdote, a follow-up clarifying question, or a real-life scenario. Do NOT wrap up early. "
-        "It is much better to be slightly long than too short.\n"
-        "- Each key point should be discussed across MULTIPLE back-and-forth turns (not just one Q+A), "
-        "with at least 2 concrete examples or sample phrases per key point.\n\n"
+        "LENGTH (IMPORTANT — HIT THE TARGET, DO NOT OVERSHOOT):\n"
+        f"- Target audio length: ~{target_minutes} minute(s) of speech.\n"
+        f"- TARGET word count: about {target_words} spoken words total.\n"
+        f"- ACCEPTABLE RANGE: {min_words}–{max_words} words. Do NOT go above {max_words}.\n"
+        f"- Aim for {target_lines_low}-{target_lines_high} dialogue turns total.\n"
+        "- Count your words as you write. Stop once you have covered the key points within the word range — "
+        "do NOT pad with filler, and do NOT cut the conversation off abruptly. End naturally near the target.\n"
+        "- For very short targets (1-2 minutes) keep it tight: a quick intro, the key points, a quick close.\n\n"
         f"{continuity_banner}"
         f"PART {part_index} TITLE: {part_title}\n"
         f"PART SUMMARY: {part_summary}\n"
