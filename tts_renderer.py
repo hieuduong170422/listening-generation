@@ -208,6 +208,19 @@ def render_script_with_voices(
     n = len(voices)
     if n == 0:
         raise ValueError("Cần ít nhất 1 voice.")
+
+    from tts_settings import get_provider, get_elevenlabs_config, PROVIDER_ELEVENLABS
+    if get_provider() == PROVIDER_ELEVENLABS:
+        from elevenlabs_tts import render_single_voice as el_single, render_multi_speaker as el_multi
+        cfg = get_elevenlabs_config()
+        el_voices = cfg.get("voices", [])
+        if n == 1:
+            return el_single(script, output_path, el_voices[0] if el_voices else "", cfg)
+        return el_multi(
+            script, output_path, el_voices[:n], cfg,
+            progress_callback=progress_callback,
+        )
+
     if n == 1:
         return _render_single_voice(
             client, script, output_path, voices[0], pace, usage_store=usage_store

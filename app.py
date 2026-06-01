@@ -28,6 +28,7 @@ if is_admin():
 
 _pages = [
     st.Page("pages/tts_studio.py", title="Tạo Podcast (TTS)", icon="🎙️", default=True),
+    st.Page("pages/tts_settings_page.py", title="Cài đặt TTS", icon="⚙️"),
     st.Page("pages/pt_home.py", title="Danh sách Template", icon="📋"),
     st.Page("pages/pt_create.py", title="Tạo Template", icon="➕"),
     st.Page("pages/pt_run.py", title="Chạy Template", icon="🚀"),
@@ -35,6 +36,7 @@ _pages = [
 ]
 _icons = {
     "Tạo Podcast (TTS)": "🎙️",
+    "Cài đặt TTS": "⚙️",
     "Danh sách Template": "📋",
     "Tạo Template": "➕",
     "Chạy Template": "🚀",
