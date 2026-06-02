@@ -27,7 +27,8 @@ if is_admin():
     render_api_key_box()
 
 _pages = [
-    st.Page("pages/tts_studio.py", title="Tạo Podcast (TTS)", icon="🎙️", default=True),
+    st.Page("pages/tts_studio.py", title="Podcast (Gemini)", icon="🎙️", default=True),
+    st.Page("pages/elevenlabs_studio.py", title="Podcast (ElevenLabs)", icon="🎧"),
     st.Page("pages/tts_settings_page.py", title="Cài đặt TTS", icon="⚙️"),
     st.Page("pages/pt_home.py", title="Danh sách Template", icon="📋"),
     st.Page("pages/pt_create.py", title="Tạo Template", icon="➕"),
@@ -35,7 +36,8 @@ _pages = [
     st.Page("pages/pt_history.py", title="Lịch sử Template", icon="📜"),
 ]
 _icons = {
-    "Tạo Podcast (TTS)": "🎙️",
+    "Podcast (Gemini)": "🎙️",
+    "Podcast (ElevenLabs)": "🎧",
     "Cài đặt TTS": "⚙️",
     "Danh sách Template": "📋",
     "Tạo Template": "➕",

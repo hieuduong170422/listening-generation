@@ -58,9 +58,17 @@ def list_voices() -> list[dict]:
             "name": v.get("name", "(unnamed)"),
             "category": v.get("category", ""),
             "labels": v.get("labels", {}),
+            "preview_url": v.get("preview_url", ""),
         }
         for v in voices
     ]
+
+
+def synthesize_preview(text: str, voice_id: str, config: dict) -> bytes:
+    """Render a short sample with current voice settings — for UI preview."""
+    if not voice_id:
+        raise ElevenLabsError("Chưa chọn voice.")
+    return _tts_request(text, voice_id, config)
 
 
 def _parse_format(fmt: str) -> tuple[str, int, int | None]:

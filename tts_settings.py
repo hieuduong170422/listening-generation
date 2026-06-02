@@ -39,6 +39,7 @@ ELEVEN_MODELS = [
 _DEFAULTS = {
     "tts_provider": PROVIDER_GEMINI,
     "elevenlabs": {
+        "num_speakers": 2,
         "voices": ["", "", "", ""],
         "model_id": "eleven_flash_v2_5",
         "stability": 0.5,
