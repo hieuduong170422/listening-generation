@@ -226,40 +226,82 @@ with mc1:
         "Model",
         options=ELEVEN_MODELS,
         index=ELEVEN_MODELS.index(el["model_id"]) if el["model_id"] in ELEVEN_MODELS else 0,
-        help="Flash v2.5 là model rẻ + nhanh nhất, phù hợp test.",
+        help=(
+            "Engine TTS của ElevenLabs.\n\n"
+            "• **eleven_flash_v2_5** — Rẻ + nhanh nhất (~75ms), chất lượng đủ dùng, hỗ trợ Speed slider. **Khuyên dùng.**\n\n"
+            "• **eleven_turbo_v2_5** — Nhanh + chất lượng cao hơn Flash. Tốn credit gấp đôi.\n\n"
+            "• **eleven_multilingual_v2** — Chất lượng cao nhất, hợp nội dung nhiều cảm xúc / đa ngôn ngữ. Chậm hơn.\n\n"
+            "• **eleven_v3** — Mới nhất, hỗ trợ tags `[laugh]`, `[whispers]` cho ngữ điệu phức tạp."
+        ),
     )
 with mc2:
     el["output_format"] = st.selectbox(
         "Output format",
         options=ELEVEN_OUTPUT_FORMATS,
         index=ELEVEN_OUTPUT_FORMATS.index(el["output_format"]) if el["output_format"] in ELEVEN_OUTPUT_FORMATS else 4,
-        help="`mp3_44100_192` chỉ có ở gói Creator+. PCM/WAV sẽ tự wrap thành file .wav.",
+        help=(
+            "Định dạng audio output.\n\n"
+            "• **mp3_44100_128** — Mặc định, dung lượng nhỏ, chất lượng OK cho podcast.\n\n"
+            "• **mp3_44100_192** — Chất lượng cao hơn (chỉ gói Creator+).\n\n"
+            "• **pcm_24000 / pcm_44100** — Raw PCM, không nén, dùng khi cần xử lý audio sau (mix, ghép). Tự wrap thành .wav.\n\n"
+            "• **ulaw_8000** — Cho telephony, chất lượng thấp."
+        ),
     )
 
 sc1, sc2 = st.columns(2)
 with sc1:
     el["stability"] = st.slider(
         "Stability", 0.0, 1.0, float(el["stability"]), 0.01,
-        help="Càng cao → giọng càng đều, ít cảm xúc. Thấp → biểu cảm hơn nhưng dễ vỡ.",
+        help=(
+            "**Độ ổn định / nhất quán giữa các câu.**\n\n"
+            "• **Thấp (0.0–0.3)**: Giọng biểu cảm, cảm xúc thay đổi mạnh — nhưng dễ 'vỡ' (đổi tone, phát âm sai).\n\n"
+            "• **Trung (0.4–0.6)**: Cân bằng — tự nhiên + ổn định. **Khuyên dùng.**\n\n"
+            "• **Cao (0.7–1.0)**: Giọng đều, ổn định, ít cảm xúc — hợp đọc tin tức / narration dài. Nghe đơn điệu.\n\n"
+            "👉 Podcast learning nên để **0.5**."
+        ),
     )
     el["similarity_boost"] = st.slider(
         "Similarity", 0.0, 1.0, float(el["similarity_boost"]), 0.01,
-        help="Mức độ bám sát voice gốc.",
+        help=(
+            "**Độ giống voice gốc.**\n\n"
+            "Quyết định model bám sát đặc trưng (timbre, accent) của voice mẫu tới mức nào.\n\n"
+            "• **Thấp (<0.5)**: Giọng có thể khác xa voice mẫu — bị 'pha trộn' với giọng generic.\n\n"
+            "• **Cao (>0.75)**: Bám sát voice gốc — nhưng nếu sample có **noise** (vang, gió), noise cũng được khuếch đại.\n\n"
+            "👉 Voice từ ElevenLabs library (premade) có sample sạch → để **0.75–0.85**."
+        ),
     )
 with sc2:
     el["style"] = st.slider(
         "Style", 0.0, 1.0, float(el["style"]), 0.01,
-        help="Cường độ kiểu nói. v3 hỗ trợ tốt hơn. Để 0 nếu không chắc.",
+        help=(
+            "**Phóng đại 'style' / ngữ điệu của voice gốc.**\n\n"
+            "• **0.0**: Không phóng đại, ngữ điệu trung tính. **An toàn nhất, khuyên dùng.**\n\n"
+            "• **0.3–0.5**: Hơi đậm style — hợp voice có character rõ (storyteller, dramatic).\n\n"
+            "• **>0.5**: Phóng đại mạnh — dễ over-acting, nghe giả, tăng latency render.\n\n"
+            "⚠️ Set >0 có thể giảm Stability — bù bằng cách tăng Stability lên 0.5+."
+        ),
     )
     el["speed"] = st.slider(
         "Speed", 0.7, 1.2, float(el["speed"]), 0.05,
-        help="Flash v2.5 hỗ trợ 0.7–1.2. Ngoài range có thể bị clip.",
+        help=(
+            "**Tốc độ đọc.**\n\n"
+            "• **0.7–0.9**: Chậm — hợp listening practice A2–B1, người mới học, ASMR.\n\n"
+            "• **1.0**: Tốc độ tự nhiên (mặc định).\n\n"
+            "• **1.1–1.2**: Nhanh — hợp podcast năng động, target C1+.\n\n"
+            "⚠️ Chỉ Flash v2.5 / Turbo v2.5 hỗ trợ. Các model khác bỏ qua."
+        ),
     )
 
 el["use_speaker_boost"] = st.toggle(
     "Speaker boost",
     value=bool(el["use_speaker_boost"]),
-    help="Tăng độ giống voice gốc, đánh đổi latency.",
+    help=(
+        "**Tăng cường độ giống voice gốc.**\n\n"
+        "Bật → model 'cố gắng' khớp timbre/style của sample gốc, đặc biệt hữu ích cho voice clone tự upload.\n\n"
+        "• **Cost**: Tăng latency render ~10–20%.\n\n"
+        "• **Khi nào BẬT**: Dùng voice clone, hoặc voice từ library mà m muốn khớp tối đa.\n\n"
+        "• **Khi nào TẮT**: Test nhanh, hoặc giọng đã đủ giống — tắt để render nhanh hơn."
+    ),
 )
 
 st.divider()
