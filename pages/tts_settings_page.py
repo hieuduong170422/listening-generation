@@ -2,6 +2,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
+from elevenlabs_tts import voice_supports_model
 from tts_settings import (
     ELEVEN_MODELS,
     ELEVEN_OUTPUT_FORMATS,
@@ -112,6 +113,23 @@ voice_labels = {v["voice_id"]: _format_voice(v) for v in voices}
 voice_previews = {v["voice_id"]: v.get("preview_url", "") for v in voices}
 
 # Filters
+_current_model_default = settings["elevenlabs"].get("model_id", "eleven_flash_v2_5")
+selected_model = st.selectbox(
+    "Model TTS (voice list bên dưới sẽ filter theo model này)",
+    options=ELEVEN_MODELS,
+    index=ELEVEN_MODELS.index(_current_model_default)
+    if _current_model_default in ELEVEN_MODELS else 0,
+    key="el_model_top",
+    help=(
+        "Engine TTS của ElevenLabs.\n\n"
+        "• **eleven_flash_v2_5** — Rẻ + nhanh nhất, hỗ trợ Speed. **Khuyên dùng.**\n\n"
+        "• **eleven_turbo_v2_5** — Nhanh + chất lượng cao hơn Flash.\n\n"
+        "• **eleven_multilingual_v2** — Chất lượng cao nhất, ít voice hơn.\n\n"
+        "• **eleven_v3** — Mới nhất, hỗ trợ tags `[laugh]`. Voice ít nhất."
+    ),
+)
+settings["elevenlabs"]["model_id"] = selected_model
+
 fc1, fc2 = st.columns(2)
 with fc1:
     gender_filter = st.radio(
@@ -134,6 +152,15 @@ with fc2:
         key="el_tier_filter",
     )
 
+_compat_with_model = sum(1 for v in voices if voice_supports_model(v, selected_model))
+_model_compat_unknown = _compat_with_model == 0
+if _model_compat_unknown:
+    st.info(
+        f"ℹ️ Model **{selected_model}** mới — ElevenLabs chưa cập nhật compat info, "
+        "tạm hiện tất cả voice. Render thực tế có thể fail với 1 số voice cũ."
+    )
+
+
 def _passes_filters(v: dict) -> bool:
     if gender_filter != "all" and _voice_gender(v) != gender_filter:
         return False
@@ -143,18 +170,29 @@ def _passes_filters(v: dict) -> bool:
     if tier_filter == "podcast" and tier < 2:
         return False
     if tier_filter == "all" and tier == 0:
-        # Vẫn ẩn nhóm character/ads ở "Tất cả" vì hoàn toàn không hợp listening
+        return False
+    if not _model_compat_unknown and not voice_supports_model(v, selected_model):
         return False
     return True
+
 
 filtered_voices = [v for v in voices if _passes_filters(v)]
 filtered_ids = [v["voice_id"] for v in filtered_voices]
 
 if not filtered_ids:
-    st.warning("Không có voice nào khớp filter. Thử nới filter.")
+    st.warning(
+        f"Không có voice nào khớp filter + model **{selected_model}**. "
+        "Thử đổi model hoặc nới filter."
+    )
     st.stop()
 
-st.caption(f"📊 Hiện {len(filtered_ids)}/{len(voices)} voice phù hợp filter")
+if _model_compat_unknown:
+    st.caption(f"📊 Hiện **{len(filtered_ids)}** voice (model compat info chưa có)")
+else:
+    st.caption(
+        f"📊 Hiện **{len(filtered_ids)}** voice "
+        f"(model `{selected_model}` hỗ trợ {_compat_with_model}/{len(voices)})"
+    )
 
 # Số speaker (1-4)
 num_speakers = st.radio(
@@ -216,25 +254,14 @@ for i in range(num_speakers):
 settings["elevenlabs"]["voices"] = selected_voices
 
 st.divider()
-st.subheader("3. Model & Voice Settings")
+st.subheader("3. Voice Settings (sliders + output format)")
 
 el = settings["elevenlabs"]
+el["model_id"] = selected_model  # sync với Model đã chọn ở Section 2
+st.caption(f"🤖 Model đang dùng: **`{selected_model}`** (đổi ở Section 2 phía trên)")
 
-mc1, mc2 = st.columns(2)
+mc1, _ = st.columns(2)
 with mc1:
-    el["model_id"] = st.selectbox(
-        "Model",
-        options=ELEVEN_MODELS,
-        index=ELEVEN_MODELS.index(el["model_id"]) if el["model_id"] in ELEVEN_MODELS else 0,
-        help=(
-            "Engine TTS của ElevenLabs.\n\n"
-            "• **eleven_flash_v2_5** — Rẻ + nhanh nhất (~75ms), chất lượng đủ dùng, hỗ trợ Speed slider. **Khuyên dùng.**\n\n"
-            "• **eleven_turbo_v2_5** — Nhanh + chất lượng cao hơn Flash. Tốn credit gấp đôi.\n\n"
-            "• **eleven_multilingual_v2** — Chất lượng cao nhất, hợp nội dung nhiều cảm xúc / đa ngôn ngữ. Chậm hơn.\n\n"
-            "• **eleven_v3** — Mới nhất, hỗ trợ tags `[laugh]`, `[whispers]` cho ngữ điệu phức tạp."
-        ),
-    )
-with mc2:
     el["output_format"] = st.selectbox(
         "Output format",
         options=ELEVEN_OUTPUT_FORMATS,

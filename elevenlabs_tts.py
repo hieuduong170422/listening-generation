@@ -59,9 +59,26 @@ def list_voices() -> list[dict]:
             "category": v.get("category", ""),
             "labels": v.get("labels", {}),
             "preview_url": v.get("preview_url", ""),
+            "high_quality_base_model_ids": v.get("high_quality_base_model_ids", []) or [],
+            "fine_tuning_states": (v.get("fine_tuning") or {}).get("state", {}) or {},
         }
         for v in voices
     ]
+
+
+def voice_supports_model(voice: dict, model_id: str) -> bool:
+    """Return True if `voice` is known to work with `model_id`.
+
+    Sources of truth (any one is sufficient):
+      • voice.high_quality_base_model_ids  — official supported list
+      • voice.fine_tuning_states[model_id] == "fine_tuned" — fine-tuned
+    """
+    if not model_id:
+        return True
+    if model_id in (voice.get("high_quality_base_model_ids") or []):
+        return True
+    state = (voice.get("fine_tuning_states") or {}).get(model_id, "")
+    return state == "fine_tuned"
 
 
 def synthesize_preview(text: str, voice_id: str, config: dict) -> bytes:

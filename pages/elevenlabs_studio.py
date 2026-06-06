@@ -40,6 +40,7 @@ from elevenlabs_tts import (
     list_voices as _el_list_voices,
     render_multi_speaker as _el_render_multi,
     render_single_voice as _el_render_single,
+    voice_supports_model as _el_voice_supports_model,
 )
 from tts_settings import (
     ELEVEN_MODELS,
@@ -455,6 +456,22 @@ def _sidebar(client: genai.Client) -> dict:
                 st.error(f"Không load được voice list ElevenLabs: {_e}")
                 st.stop()
 
+            _el_defaults_for_model = _el_load_settings().get("elevenlabs", {})
+            _el_model = st.selectbox(
+                "Model",
+                ELEVEN_MODELS,
+                index=ELEVEN_MODELS.index(_el_defaults_for_model.get("model_id", "eleven_flash_v2_5"))
+                if _el_defaults_for_model.get("model_id") in ELEVEN_MODELS else 0,
+                key="_el_model_sidebar",
+                help=(
+                    "Engine TTS của ElevenLabs. **Voice list bên dưới sẽ filter theo model này.**\n\n"
+                    "• **eleven_flash_v2_5** — Rẻ + nhanh nhất, hỗ trợ Speed slider. Khuyên dùng.\n\n"
+                    "• **eleven_turbo_v2_5** — Nhanh + chất lượng cao hơn Flash. Tốn credit gấp đôi.\n\n"
+                    "• **eleven_multilingual_v2** — Chất lượng cao nhất, hợp đa ngôn ngữ. Voice ít hơn.\n\n"
+                    "• **eleven_v3** — Mới nhất, hỗ trợ tags `[laugh]`, `[whispers]`. Voice ít nhất."
+                ),
+            )
+
             vc1, vc2 = st.columns(2)
             with vc1:
                 num_speakers = st.selectbox(
@@ -495,18 +512,37 @@ def _sidebar(client: genai.Client) -> dict:
                     key="_el_tier_filter",
                 )
 
+            _compat_count = sum(
+                1 for v in _el_all_voices if _el_voice_supports_model(v, _el_model)
+            )
+            _model_compat_unknown = _compat_count == 0
+            if _model_compat_unknown:
+                st.info(
+                    f"ℹ️ Model **{_el_model}** mới — ElevenLabs chưa cập nhật compat info, "
+                    "tạm hiện tất cả voice. Render thực tế có thể fail với 1 số voice cũ."
+                )
             _filtered = [
                 v for v in _el_all_voices
                 if _el_passes(v, _gender_filter, _tier_filter)
+                and (_model_compat_unknown or _el_voice_supports_model(v, _el_model))
             ]
             if not _filtered:
-                st.warning("Không có voice nào khớp filter. Thử nới filter.")
+                st.warning(
+                    f"Không có voice nào khớp filter + model **{_el_model}**. "
+                    "Thử đổi model hoặc nới filter giới tính/tier."
+                )
                 st.stop()
 
             _filtered_ids = [v["voice_id"] for v in _filtered]
             _voice_label_map = {v["voice_id"]: _el_fmt_voice(v) for v in _filtered}
             _voice_preview_map = {v["voice_id"]: v.get("preview_url", "") for v in _el_all_voices}
-            st.caption(f"📊 Hiện {len(_filtered_ids)}/{len(_el_all_voices)} voice phù hợp filter")
+            if _model_compat_unknown:
+                st.caption(f"📊 Hiện **{len(_filtered_ids)}** voice (model compat info chưa có)")
+            else:
+                st.caption(
+                    f"📊 Hiện **{len(_filtered_ids)}** voice "
+                    f"(model `{_el_model}` hỗ trợ {_compat_count}/{len(_el_all_voices)})"
+                )
 
             host_names: list[str] = []
             host_voices: list[str] = []
@@ -552,25 +588,10 @@ def _sidebar(client: genai.Client) -> dict:
                 "📘 **Hướng dẫn nhanh** — bấm icon ❔ cạnh từng slider để xem chi tiết. "
                 "Nếu chưa quen, để mặc định và chỉnh dần."
             )
+            st.caption(f"🤖 Model đang dùng: **`{_el_model}`** (đổi ở expander Giọng đọc bên trên)")
             _el_defaults = _el_load_settings().get("elevenlabs", {})
             tc1, tc2 = st.columns(2)
             with tc1:
-                _el_model = st.selectbox(
-                    "Model",
-                    ELEVEN_MODELS,
-                    index=ELEVEN_MODELS.index(_el_defaults.get("model_id", "eleven_flash_v2_5"))
-                    if _el_defaults.get("model_id") in ELEVEN_MODELS else 0,
-                    key="_el_model_sidebar",
-                    help=(
-                        "Chọn engine TTS của ElevenLabs.\n\n"
-                        "• **eleven_flash_v2_5** — Rẻ nhất, nhanh nhất (~75ms), chất lượng đủ dùng. "
-                        "Hỗ trợ slider Speed. **Khuyên dùng cho podcast dài / test nhiều.**\n\n"
-                        "• **eleven_turbo_v2_5** — Nhanh + chất lượng cao hơn Flash. Tốn credit gấp đôi.\n\n"
-                        "• **eleven_multilingual_v2** — Chậm hơn nhưng chất lượng cao nhất, "
-                        "hợp với content yêu cầu cảm xúc / nhiều ngôn ngữ.\n\n"
-                        "• **eleven_v3** — Mới nhất, hỗ trợ ngữ điệu phức tạp + tags `[laugh]`, `[whispers]`."
-                    ),
-                )
                 _el_stability = st.slider(
                     "Stability", 0.0, 1.0, float(_el_defaults.get("stability", 0.5)), 0.01,
                     key="_el_stab_sidebar",
