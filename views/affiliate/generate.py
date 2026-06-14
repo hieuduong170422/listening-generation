@@ -160,30 +160,32 @@ if results:
             if item.get("error"):
                 st.error(f"Lỗi ảnh {idx}: {item['error']}")
                 continue
-            if item.get("image"):
-                st.image(item["image"], use_container_width=True)
-                st.download_button(
-                    "⬇️ Tải ảnh storyboard",
-                    data=item["image"],
-                    file_name=f"ugc_storyboard_{idx}.png",
-                    mime="image/png",
-                    key=f"_dl_img_{idx}",
-                )
-            st.markdown("**Prompt video (EN):**")
-            st.code(item.get("prompt") or "", language="text")
 
-            # ── Tạo video Veo 3.1 cho riêng output này ──
-            if item.get("video"):
-                st.video(item["video"])
-                st.download_button(
-                    "⬇️ Tải video",
-                    data=item["video"],
-                    file_name=f"ugc_video_{idx}.mp4",
-                    mime="video/mp4",
-                    key=f"_dl_vid_{idx}",
-                )
-            else:
-                if st.button("🎬 Tạo video (Veo 3.1)", key=f"_mkvid_{idx}"):
+            left, right = st.columns([1, 1.3])
+
+            # ── Cột trái: ảnh storyboard + tạo/tải video ──
+            with left:
+                if item.get("image"):
+                    st.image(item["image"], use_container_width=True)
+                    st.download_button(
+                        "⬇️ Tải ảnh",
+                        data=item["image"],
+                        file_name=f"ugc_storyboard_{idx}.png",
+                        mime="image/png",
+                        key=f"_dl_img_{idx}",
+                        use_container_width=True,
+                    )
+                if item.get("video"):
+                    st.video(item["video"])
+                    st.download_button(
+                        "⬇️ Tải video",
+                        data=item["video"],
+                        file_name=f"ugc_video_{idx}.mp4",
+                        mime="video/mp4",
+                        key=f"_dl_vid_{idx}",
+                        use_container_width=True,
+                    )
+                elif st.button("🎬 Tạo video (Veo 3.1)", key=f"_mkvid_{idx}", use_container_width=True):
                     prod = st.session_state.get("_ugc_product_imgs", [])
                     client = _get_client()
                     with st.spinner("Veo 3.1 đang dựng video (có thể mất vài phút)..."):
@@ -198,6 +200,11 @@ if results:
                             st.rerun()
                         except Exception as e:
                             st.error(_friendly_error(e))
+
+            # ── Cột phải: prompt ──
+            with right:
+                st.markdown("**Prompt video (EN):**")
+                st.code(item.get("prompt") or "", language="text")
 
     all_prompts = "\n\n".join(
         f"# Storyboard {i}\n{x.get('prompt','')}" for i, x in enumerate(results, start=1) if x.get("prompt")
