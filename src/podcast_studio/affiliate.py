@@ -235,30 +235,47 @@ def generate_video_veo(
     """
     import time
 
-    refs: list = []
-    for data, mime in product_images[:2]:
-        refs.append(
+    neg = "human faces, on-screen text, captions, watermark, app interface"
+    # Gemini API chỉ hỗ trợ reference type ASSET (STYLE là của Vertex) → chỉ dùng ảnh sản phẩm.
+    first_img = product_images[0] if product_images else (
+        (storyboard_image, "image/png") if storyboard_image else None
+    )
+
+    def _start_with_references():
+        refs = [
             types.VideoGenerationReferenceImage(
                 image=types.Image(image_bytes=data, mime_type=mime or "image/png"),
                 reference_type=types.VideoGenerationReferenceType.ASSET,
             )
+            for data, mime in product_images[:3]
+        ]
+        if not refs:
+            raise ValueError("no-asset-refs")
+        config = types.GenerateVideosConfig(
+            aspect_ratio=aspect_ratio, number_of_videos=1,
+            reference_images=refs, negative_prompt=neg,
         )
-    if storyboard_image:
-        refs.append(
-            types.VideoGenerationReferenceImage(
-                image=types.Image(image_bytes=storyboard_image, mime_type="image/png"),
-                reference_type=types.VideoGenerationReferenceType.STYLE,
-            )
+        return client.models.generate_videos(model=model, prompt=prompt, config=config)
+
+    def _start_with_first_frame():
+        config = types.GenerateVideosConfig(
+            aspect_ratio=aspect_ratio, number_of_videos=1, negative_prompt=neg,
         )
+        source_kwargs = {"prompt": prompt}
+        if first_img:
+            data, mime = first_img
+            source_kwargs["image"] = types.Image(image_bytes=data, mime_type=mime or "image/png")
+        source = types.GenerateVideosSource(**source_kwargs)
+        return client.models.generate_videos(model=model, source=source, config=config)
 
-    config = types.GenerateVideosConfig(
-        aspect_ratio=aspect_ratio,
-        number_of_videos=1,
-        reference_images=refs or None,
-        negative_prompt="human faces, on-screen text, captions, watermark, app interface",
-    )
-
-    operation = client.models.generate_videos(model=model, prompt=prompt, config=config)
+    try:
+        operation = _start_with_references()
+    except Exception as e:
+        # Reference images không được hỗ trợ → fallback first-frame image-to-video.
+        if "reference" in str(e).lower() or "not supported" in str(e).lower() or "no-asset-refs" in str(e):
+            operation = _start_with_first_frame()
+        else:
+            raise
 
     deadline = time.time() + _VEO_POLL_TIMEOUT
     while not operation.done and time.time() < deadline:
