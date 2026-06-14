@@ -33,6 +33,9 @@ DASHSCOPE_IMAGE_MODELS: dict[str, str] = {
 }
 DEFAULT_IMAGE_MODEL = "qwen-image-2.0"
 
+# DashScope image-edit (I2I) chỉ nhận tối đa 3 ảnh tham chiếu.
+MAX_DASHSCOPE_IMAGES = 3
+
 # Quy tắc UGC dùng chung cho cả ảnh lẫn prompt.
 _UGC_RULES = (
     "STRICT UGC RULES:\n"
@@ -157,10 +160,11 @@ def generate_ugc_keyframe_dashscope(
     if idea.strip():
         instruction += f"- Product / campaign idea: {idea.strip()}\n"
 
+    # Giới hạn tổng số ảnh tham chiếu ≤ MAX (ưu tiên ảnh sản phẩm).
+    ref_images = (list(product_images) + list(scene_images))[:MAX_DASHSCOPE_IMAGES]
+
     parts: list = [{"text": instruction}]
-    for data, mime in product_images:
-        parts.append({"image": _data_uri(data, mime)})
-    for data, mime in scene_images:
+    for data, mime in ref_images:
         parts.append({"image": _data_uri(data, mime)})
 
     messages = [{"role": "user", "content": parts}]

@@ -67,6 +67,19 @@ with c2:
     if scene_files:
         st.image([f for f in scene_files], width=90)
 
+from podcast_studio.affiliate import MAX_DASHSCOPE_IMAGES
+
+_total_imgs = len(product_files or []) + len(scene_files or [])
+st.caption(
+    f"ℹ️ Model DashScope chỉ nhận tối đa **{MAX_DASHSCOPE_IMAGES} ảnh** tham chiếu/lần "
+    "(ưu tiên ảnh sản phẩm trước, rồi tới ảnh scene)."
+)
+if _total_imgs > MAX_DASHSCOPE_IMAGES:
+    st.warning(
+        f"Bạn đã chọn {_total_imgs} ảnh — chỉ **{MAX_DASHSCOPE_IMAGES} ảnh đầu** được dùng. "
+        "Bớt ảnh scene hoặc chỉ giữ ảnh sản phẩm quan trọng nhất để kết quả đúng ý hơn."
+    )
+
 # ── Bước 2: Cấu hình ───────────────────────────────────────────────────────
 st.subheader("2️⃣ Cấu hình")
 idea = st.text_area(
