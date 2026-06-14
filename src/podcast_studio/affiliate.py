@@ -38,14 +38,36 @@ MAX_DASHSCOPE_IMAGES = 3
 
 # Quy tắc UGC dùng chung cho cả ảnh lẫn prompt.
 _UGC_RULES = (
-    "STRICT UGC RULES:\n"
-    "- FACELESS: never show a human face. Allowed: hands interacting with the product, "
-    "over-the-shoulder, POV, product close-ups, partial body below the neck.\n"
-    "- Authentic user-generated look: shot on a phone, natural/imperfect lighting, real "
-    "everyday setting (home, desk, cafe, bathroom, outdoor), handheld feel.\n"
-    "- NO on-screen text, NO captions, NO watermark, NO logo overlay.\n"
-    "- Vertical 9:16 framing for TikTok/Reels.\n"
+    "STYLE & RULES:\n"
+    "- Photorealistic, bright, CLEAN lifestyle / e-commerce UGC product photography "
+    "(like a high-quality real-customer review), NOT gritty or low-quality.\n"
+    "- Soft natural lighting, tidy modern real-world setting, neutral/minimal palette, "
+    "pleasing shallow depth of field.\n"
+    "- FACELESS: never show a human face. Only hands/forearms interacting with the product, "
+    "or the product by itself. No faces, no full bodies, no people in the background.\n"
+    "- The PRODUCT from the provided image(s) is the clear HERO and must look identical: "
+    "same shape, color, material, proportions and details.\n"
+    "- Keep the product identity and overall setting/style CONSISTENT across the whole series.\n"
+    "- Output a SINGLE clean photo — NO collage, NO split frames, NO grid, NO before/after panels.\n"
+    "- NO text, NO captions, NO logo overlay, NO watermark, NO UI elements.\n"
+    "- Vertical 9:16 framing.\n"
 )
+
+# Mỗi scene = 1 "beat" hành động khác nhau để tạo flow demo sản phẩm (faceless).
+SCENE_BEATS = (
+    "Hero shot: the product shown clearly in its real-use environment, no hands.",
+    "A hand opening / activating the product (lid, switch, drawer, cap...).",
+    "A hand using the product's MAIN function in a realistic everyday moment.",
+    "Tight close-up of a key feature, texture or detail of the product.",
+    "The product seen from a different angle that highlights its design.",
+    "A hand doing maintenance: cleaning, refilling, or swapping a part.",
+    "The product in context next to related everyday items it is used with.",
+    "Final clean beauty shot of the product, tidy and appealing.",
+)
+
+
+def _scene_beat(scene_index: int) -> str:
+    return SCENE_BEATS[(scene_index - 1) % len(SCENE_BEATS)]
 
 
 def _image_parts(images: list[tuple[bytes, str]]) -> list:
@@ -68,13 +90,12 @@ def generate_ugc_keyframe(
     """Sinh 1 keyframe UGC (bytes ảnh) cho scene thứ scene_index."""
     instruction = (
         "You are a UGC ad creative director. Generate ONE photorealistic keyframe image "
-        "(the opening frame) for a faceless TikTok-style product-review video.\n"
+        "for a faceless UGC product-review video.\n"
         + _UGC_RULES
-        + "- The PRODUCT shown in the provided product image(s) MUST be featured clearly and "
-        "look identical (same shape, color, label).\n"
-        "- Use the reference scene screenshots ONLY for setting / composition / style inspiration.\n"
-        f"- This is scene {scene_index} of {total}; make the angle, action and setting "
-        "visually DISTINCT from the other scenes.\n"
+        + "- Use the product reference image(s) for the EXACT product; use any scene screenshots "
+        "ONLY for setting / composition / style inspiration.\n"
+        f"- SCENE FOCUS (shot {scene_index} of {total}): {_scene_beat(scene_index)}\n"
+        "- Make this shot visually DISTINCT from the other shots in the series.\n"
     )
     if idea.strip():
         instruction += f"- Product / campaign idea: {idea.strip()}\n"
@@ -149,13 +170,12 @@ def generate_ugc_keyframe_dashscope(
     dashscope = _configure_dashscope()
 
     instruction = (
-        "Generate ONE photorealistic vertical 9:16 keyframe (opening frame) for a faceless "
-        "TikTok-style product-review video.\n"
+        "Generate ONE photorealistic vertical 9:16 keyframe for a faceless UGC product-review video.\n"
         + _UGC_RULES
-        + "- The PRODUCT in the provided product image(s) MUST be featured clearly and look "
-        "identical (same shape, color, label).\n"
-        "- Use the reference scene screenshots ONLY for setting / composition / style.\n"
-        f"- Scene {scene_index} of {total}; make angle, action and setting DISTINCT from other scenes.\n"
+        + "- Use the product reference image(s) for the EXACT product; use any scene screenshots "
+        "ONLY for setting / composition / style inspiration.\n"
+        f"- SCENE FOCUS (shot {scene_index} of {total}): {_scene_beat(scene_index)}\n"
+        "- Make this shot visually DISTINCT from the other shots in the series.\n"
     )
     if idea.strip():
         instruction += f"- Product / campaign idea: {idea.strip()}\n"
@@ -194,12 +214,14 @@ def generate_video_prompt(
     target_label = TARGET_MODELS.get(target_model, TARGET_MODELS[DEFAULT_TARGET])
     prompt = (
         f"Write ONE image-to-video prompt in ENGLISH, optimized for {target_label}. "
-        "It will animate a given keyframe into a 5-8 second faceless UGC TikTok product-review clip.\n"
+        "It will animate a given keyframe into a 5-8 second faceless UGC product-review clip.\n"
         + _UGC_RULES
-        + "The prompt MUST describe: camera movement, the action (hands using/showing the product), "
-        "product interaction, lighting, mood and pacing — in a single cohesive paragraph.\n"
-        f"This is scene {scene_index} of {total}; keep it distinct from other scenes.\n"
-        "Output ONLY the prompt text — no preamble, no markdown, no quotes, no numbering.\n"
+        + f"SCENE FOCUS (shot {scene_index} of {total}): {_scene_beat(scene_index)}\n"
+        "The prompt MUST describe: camera movement, the hands' action on the product, product "
+        "interaction, lighting, mood and pacing — in a single cohesive paragraph that matches the "
+        "scene focus above.\n"
+        "Keep it distinct from the other shots. Output ONLY the prompt text — no preamble, no "
+        "markdown, no quotes, no numbering.\n"
     )
     if idea.strip():
         prompt += f"Product / campaign idea: {idea.strip()}\n"
