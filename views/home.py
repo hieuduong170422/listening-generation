@@ -41,10 +41,10 @@ with col3:
     with st.container(border=True):
         st.subheader("🎬 Video Affiliate (UGC)")
         st.markdown(
-            "Sinh **keyframe UGC không lộ mặt** + **prompt** cho VEO/Omni.\n\n"
-            "- Upload ảnh sản phẩm + ảnh scene (screenshot TikTok)\n"
-            "- Nhập N → ra N keyframe 9:16 phong cách UGC\n"
-            "- Mỗi keyframe kèm 1 prompt image-to-video (EN)\n"
+            "Sinh **ảnh storyboard nhiều bước** (faceless) + **prompt** cho VEO/Omni.\n\n"
+            "- Upload ảnh sản phẩm + ảnh scene tham khảo\n"
+            "- Nhập N → ra N ảnh storyboard lưới các bước dùng SP\n"
+            "- Mỗi ảnh kèm 1 prompt video UGC (EN) có cấu trúc\n"
             "- Tải ảnh + prompt để tạo clip review"
         )
         if st.button("Mở Video Affiliate →", type="primary", use_container_width=True, key="_go_affiliate"):

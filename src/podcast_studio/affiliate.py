@@ -1,8 +1,9 @@
-"""Video Affiliate (UGC) — sinh keyframe UGC không lộ mặt + prompt image-to-video.
+"""Video Affiliate (UGC) — sinh ẢNH STORYBOARD nhiều bước (faceless) + PROMPT video có cấu trúc.
 
-Đầu vào: ảnh sản phẩm + ảnh scene tham khảo (screenshot TikTok). Đầu ra: N keyframe
-(khung hình đầu, dọc 9:16, phong cách UGC, KHÔNG lộ mặt) kèm N prompt tiếng Anh để đưa
-vào VEO/Omni... tạo clip review UGC.
+Đầu vào: ảnh sản phẩm + ảnh scene tham khảo (screenshot TikTok). Mỗi output gồm:
+  - 1 ảnh storyboard dạng lưới nhiều panel (mỗi panel = 1 bước dùng sản phẩm, không lộ mặt),
+  - 1 prompt tiếng Anh theo template "UGC product video" để đưa vào VEO/Omni tạo clip.
+Ảnh sinh bằng DashScope (qwen-image / wan-image); prompt sinh bằng Gemini (đọc ảnh sản phẩm).
 """
 
 import base64
@@ -13,11 +14,10 @@ from google import genai
 from google.genai import types
 
 from podcast_studio.api_utils import call_with_retry, track_response
-from podcast_studio.image_generator import IMAGE_MODEL, _extract_image_bytes
 
 TEXT_MODEL = "gemini-2.5-flash"
 
-# Model đích để tối ưu prompt image-to-video.
+# Model đích để tinh chỉnh prompt image-to-video.
 TARGET_MODELS: dict[str, str] = {
     "veo": "Google VEO",
     "omni": "Omni (image-to-video)",
@@ -36,87 +36,30 @@ DEFAULT_IMAGE_MODEL = "qwen-image-2.0"
 # DashScope image-edit (I2I) chỉ nhận tối đa 3 ảnh tham chiếu.
 MAX_DASHSCOPE_IMAGES = 3
 
-# Quy tắc UGC dùng chung cho cả ảnh lẫn prompt.
-_UGC_RULES = (
-    "STYLE & RULES:\n"
-    "- Photorealistic, bright, CLEAN lifestyle / e-commerce UGC product photography "
-    "(like a high-quality real-customer review), NOT gritty or low-quality.\n"
-    "- Soft natural lighting, tidy modern real-world setting, neutral/minimal palette, "
-    "pleasing shallow depth of field.\n"
-    "- FACELESS: never show a human face. Only hands/forearms interacting with the product, "
+DEFAULT_PANELS = 8
+
+# Quy tắc faceless + chất lượng dùng chung cho cả ảnh lẫn prompt.
+_FACELESS_CLEAN_RULES = (
+    "- FACELESS: never show a human face; only hands/forearms interacting with the product, "
     "or the product by itself. No faces, no full bodies, no people in the background.\n"
-    "- The PRODUCT from the provided image(s) is the clear HERO and must look identical: "
-    "same shape, color, material, proportions and details.\n"
-    "- Keep the product identity and overall setting/style CONSISTENT across the whole series.\n"
-    "- Output a SINGLE clean photo — NO collage, NO split frames, NO grid, NO before/after panels.\n"
-    "- NO text, NO captions, NO logo overlay, NO watermark, NO UI elements.\n"
-    "- Vertical 9:16 framing.\n"
-)
-
-# Mỗi scene = 1 "beat" hành động khác nhau để tạo flow demo sản phẩm (faceless).
-SCENE_BEATS = (
-    "Hero shot: the product shown clearly in its real-use environment, no hands.",
-    "A hand opening / activating the product (lid, switch, drawer, cap...).",
-    "A hand using the product's MAIN function in a realistic everyday moment.",
-    "Tight close-up of a key feature, texture or detail of the product.",
-    "The product seen from a different angle that highlights its design.",
-    "A hand doing maintenance: cleaning, refilling, or swapping a part.",
-    "The product in context next to related everyday items it is used with.",
-    "Final clean beauty shot of the product, tidy and appealing.",
+    "- Photorealistic, bright, CLEAN lifestyle / e-commerce photography (NOT gritty, NOT low quality).\n"
+    "- Soft natural lighting, tidy real-world setting, neutral/minimal palette.\n"
+    "- The PRODUCT from the reference image(s) is the HERO and must look identical everywhere "
+    "(same shape, color, material, proportions and details).\n"
+    "- Keep the product identity and the overall setting CONSISTENT across the whole image.\n"
+    "- ABSOLUTELY NO phone screen, NO app / TikTok / Reels interface, NO icons, NO buttons, "
+    "NO search bar, NO text, NO captions, NO numbers, NO logo overlay, NO watermark.\n"
 )
 
 
-def _scene_beat(scene_index: int) -> str:
-    return SCENE_BEATS[(scene_index - 1) % len(SCENE_BEATS)]
-
+# ── Helpers: Gemini image parts & DashScope ────────────────────────────────
 
 def _image_parts(images: list[tuple[bytes, str]]) -> list:
-    """Chuyển list (bytes, mime) thành list types.Part để đưa vào contents."""
+    """Chuyển list (bytes, mime) thành list types.Part (cho Gemini multimodal)."""
     return [
         types.Part.from_bytes(data=data, mime_type=mime or "image/png")
         for data, mime in images
     ]
-
-
-def generate_ugc_keyframe(
-    client: genai.Client,
-    *,
-    product_images: list[tuple[bytes, str]],
-    scene_images: list[tuple[bytes, str]],
-    idea: str,
-    scene_index: int,
-    total: int,
-) -> bytes:
-    """Sinh 1 keyframe UGC (bytes ảnh) cho scene thứ scene_index."""
-    instruction = (
-        "You are a UGC ad creative director. Generate ONE photorealistic keyframe image "
-        "for a faceless UGC product-review video.\n"
-        + _UGC_RULES
-        + "- Use the product reference image(s) for the EXACT product; use any scene screenshots "
-        "ONLY for setting / composition / style inspiration.\n"
-        f"- SCENE FOCUS (shot {scene_index} of {total}): {_scene_beat(scene_index)}\n"
-        "- Make this shot visually DISTINCT from the other shots in the series.\n"
-    )
-    if idea.strip():
-        instruction += f"- Product / campaign idea: {idea.strip()}\n"
-
-    contents: list = []
-    if product_images:
-        contents.append("PRODUCT IMAGE(S):")
-        contents += _image_parts(product_images)
-    if scene_images:
-        contents.append("REFERENCE SCENE SCREENSHOTS (style/setting only):")
-        contents += _image_parts(scene_images)
-    contents.append(instruction)
-
-    response = call_with_retry(
-        client.models.generate_content,
-        model=IMAGE_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
-    )
-    track_response(None, response, "image")
-    return _extract_image_bytes(response)
 
 
 def _configure_dashscope():
@@ -154,35 +97,44 @@ def _extract_dashscope_image_url(response) -> str:
     raise RuntimeError("DashScope không trả về ảnh — thử lại hoặc đổi model/ảnh input.")
 
 
-def generate_ugc_keyframe_dashscope(
+# ── Sinh ảnh STORYBOARD (lưới nhiều bước) bằng DashScope ────────────────────
+
+def generate_storyboard_dashscope(
     *,
     product_images: list[tuple[bytes, str]],
     scene_images: list[tuple[bytes, str]],
     idea: str,
-    scene_index: int,
-    total: int,
+    panels: int = DEFAULT_PANELS,
+    variation_index: int = 1,
+    total: int = 1,
     model: str = DEFAULT_IMAGE_MODEL,
 ) -> bytes:
-    """Sinh 1 keyframe UGC bằng DashScope (qwen-image / wan-image) → trả về bytes ảnh."""
+    """Sinh 1 ảnh storyboard dạng lưới (panels panel) bằng DashScope → bytes ảnh."""
     import requests
     from dashscope import MultiModalConversation
 
-    dashscope = _configure_dashscope()
+    _configure_dashscope()
 
     instruction = (
-        "Generate ONE photorealistic vertical 9:16 keyframe for a faceless UGC product-review video.\n"
-        + _UGC_RULES
-        + "- Use the product reference image(s) for the EXACT product; use any scene screenshots "
+        f"Create ONE photorealistic STORYBOARD GRID image: a neat grid of {panels} equal panels "
+        "(thin clean white gutters between panels) showing a faceless UGC product-demo sequence.\n"
+        "Each panel = a DIFFERENT step of using the product, in logical order: "
+        "product shown in place → open / activate it → main use → pour / fill / insert → "
+        "wipe / clean → remove or replace a part → final tidy beauty shot.\n"
+        + _FACELESS_CLEAN_RULES
+        + "- Overall image is HORIZONTAL / landscape; panels arranged in clean rows and columns.\n"
+        "- Use the product reference image(s) for the EXACT product; use any scene screenshots "
         "ONLY for setting / composition / style inspiration.\n"
-        f"- SCENE FOCUS (shot {scene_index} of {total}): {_scene_beat(scene_index)}\n"
-        "- Make this shot visually DISTINCT from the other shots in the series.\n"
     )
     if idea.strip():
-        instruction += f"- Product / campaign idea: {idea.strip()}\n"
+        instruction += f"- Product / context: {idea.strip()}\n"
+    if total > 1:
+        instruction += (
+            f"- This is concept variation {variation_index} of {total}; vary the angles and steps "
+            "so it differs from the other variations.\n"
+        )
 
-    # Giới hạn tổng số ảnh tham chiếu ≤ MAX (ưu tiên ảnh sản phẩm).
     ref_images = (list(product_images) + list(scene_images))[:MAX_DASHSCOPE_IMAGES]
-
     parts: list = [{"text": instruction}]
     for data, mime in ref_images:
         parts.append({"image": _data_uri(data, mime)})
@@ -201,63 +153,92 @@ def generate_ugc_keyframe_dashscope(
     return resp.content
 
 
-def generate_video_prompt(
+# ── Sinh PROMPT video có cấu trúc bằng Gemini (đọc ảnh sản phẩm) ─────────────
+
+def generate_sequence_prompt(
     client: genai.Client,
     *,
+    product_images: list[tuple[bytes, str]],
     idea: str,
-    target_model: str,
-    scene_index: int,
-    total: int,
+    target_model: str = DEFAULT_TARGET,
+    variation_index: int = 1,
+    total: int = 1,
     text_model: str = TEXT_MODEL,
 ) -> str:
-    """Sinh 1 prompt image-to-video (tiếng Anh) cho keyframe của scene scene_index."""
+    """Sinh 1 prompt video UGC (tiếng Anh) theo template cố định, mô tả đúng sản phẩm trong ảnh."""
     target_label = TARGET_MODELS.get(target_model, TARGET_MODELS[DEFAULT_TARGET])
-    prompt = (
-        f"Write ONE image-to-video prompt in ENGLISH, optimized for {target_label}. "
-        "It will animate a given keyframe into a 5-8 second faceless UGC product-review clip.\n"
-        + _UGC_RULES
-        + f"SCENE FOCUS (shot {scene_index} of {total}): {_scene_beat(scene_index)}\n"
-        "The prompt MUST describe: camera movement, the hands' action on the product, product "
-        "interaction, lighting, mood and pacing — in a single cohesive paragraph that matches the "
-        "scene focus above.\n"
-        "Keep it distinct from the other shots. Output ONLY the prompt text — no preamble, no "
-        "markdown, no quotes, no numbering.\n"
+    instruction = (
+        f"You write UGC product-video prompts for {target_label}. Look at the product image(s) and "
+        "write ONE prompt in ENGLISH using EXACTLY this structure and tone (keep the headings/lines):\n\n"
+        "Create a realistic UGC-style product video featuring <one concise product description> "
+        "(like in the reference image).\n\n"
+        "Show the following actions in sequence:\n"
+        "1. <step>\n"
+        "2. <step>\n"
+        "3. <step>\n"
+        "(list 5-8 concrete steps that suit THIS product, faceless, hands only, logical order)\n\n"
+        "Camera angles: slight top-down and front view, close-ups on hands interacting with the product, "
+        "maintain consistent product proportions.\n"
+        "Lighting: soft, natural <setting> lighting.\n"
+        "Do not show faces, do not add text overlays, do not exaggerate movements.\n"
+        "Keep the product form, size, and proportions true to the reference image.\n"
+        "Style: realistic, natural, unobtrusive, instructional, no dramatization.\n"
+        "Duration: short, 15-30 seconds, smooth transitions between actions.\n\n"
+        "RULES: replace every <...> with content specific to the product seen in the image. "
+        "All actions must be faceless (hands only) and realistic. "
+        "Output ONLY the prompt text — no preamble, no markdown fences, no extra commentary.\n"
     )
     if idea.strip():
-        prompt += f"Product / campaign idea: {idea.strip()}\n"
+        instruction += f"Extra context: {idea.strip()}\n"
+    if total > 1:
+        instruction += (
+            f"This is variation {variation_index} of {total}; vary the action order / camera angles "
+            "so it is distinct from the other variations.\n"
+        )
+
+    contents: list = []
+    if product_images:
+        contents.append("PRODUCT IMAGE(S):")
+        contents += _image_parts(product_images)
+    contents.append(instruction)
 
     response = call_with_retry(
-        client.models.generate_content, model=text_model, contents=prompt
+        client.models.generate_content, model=text_model, contents=contents
     )
     track_response(None, response, "text")
     return (response.text or "").strip()
 
 
-def generate_ugc_scene(
+# ── Sinh 1 output hoàn chỉnh: ảnh storyboard + prompt ───────────────────────
+
+def generate_ugc_storyboard(
     client: genai.Client,
     *,
     product_images: list[tuple[bytes, str]],
     scene_images: list[tuple[bytes, str]],
     idea: str,
     target_model: str,
-    scene_index: int,
-    total: int,
+    panels: int = DEFAULT_PANELS,
+    variation_index: int = 1,
+    total: int = 1,
     image_model: str = DEFAULT_IMAGE_MODEL,
 ) -> dict:
-    """Sinh 1 scene hoàn chỉnh: keyframe ảnh (DashScope) + prompt image-to-video (Gemini text)."""
-    image_bytes = generate_ugc_keyframe_dashscope(
+    """Trả về {'image': bytes (storyboard lưới), 'prompt': str (template video UGC)}."""
+    image_bytes = generate_storyboard_dashscope(
         product_images=product_images,
         scene_images=scene_images,
         idea=idea,
-        scene_index=scene_index,
+        panels=panels,
+        variation_index=variation_index,
         total=total,
         model=image_model,
     )
-    prompt = generate_video_prompt(
+    prompt = generate_sequence_prompt(
         client,
+        product_images=product_images,
         idea=idea,
         target_model=target_model,
-        scene_index=scene_index,
+        variation_index=variation_index,
         total=total,
     )
     return {"image": image_bytes, "prompt": prompt}
