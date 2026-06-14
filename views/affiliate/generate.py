@@ -13,6 +13,7 @@ from podcast_studio.affiliate import (
     MAX_DASHSCOPE_IMAGES,
     DEFAULT_PANELS,
     generate_ugc_storyboard,
+    generate_video_veo,
 )
 
 
@@ -116,6 +117,7 @@ if st.button("🚀 Sinh storyboard + prompt", type="primary"):
     else:
         product_images = _read_uploads(product_files)
         scene_images = _read_uploads(scene_files)
+        st.session_state["_ugc_product_imgs"] = product_images  # dùng lại cho bước tạo video
         client = _get_client()
         results = []
         total = int(n)
@@ -170,6 +172,33 @@ if results:
             st.markdown("**Prompt video (EN):**")
             st.code(item.get("prompt") or "", language="text")
 
+            # ── Tạo video Veo 3.1 cho riêng output này ──
+            if item.get("video"):
+                st.video(item["video"])
+                st.download_button(
+                    "⬇️ Tải video",
+                    data=item["video"],
+                    file_name=f"ugc_video_{idx}.mp4",
+                    mime="video/mp4",
+                    key=f"_dl_vid_{idx}",
+                )
+            else:
+                if st.button("🎬 Tạo video (Veo 3.1)", key=f"_mkvid_{idx}"):
+                    prod = st.session_state.get("_ugc_product_imgs", [])
+                    client = _get_client()
+                    with st.spinner("Veo 3.1 đang dựng video (có thể mất vài phút)..."):
+                        try:
+                            vid = generate_video_veo(
+                                client,
+                                prompt=item.get("prompt") or "",
+                                product_images=prod,
+                                storyboard_image=item.get("image"),
+                            )
+                            item["video"] = vid  # lưu vào kết quả (persist qua session_state)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(_friendly_error(e))
+
     all_prompts = "\n\n".join(
         f"# Storyboard {i}\n{x.get('prompt','')}" for i, x in enumerate(results, start=1) if x.get("prompt")
     )
@@ -181,4 +210,7 @@ if results:
             mime="text/plain",
             key="_dl_all_prompts",
         )
-    st.info("Bước tiếp theo (ghép thành video) sẽ bổ sung sau.")
+    st.caption(
+        "🎬 Nút **Tạo video (Veo 3.1)** dùng ảnh sản phẩm (ASSET) + ảnh storyboard (STYLE) + prompt. "
+        "Veo cần **key Gemini đã bật billing** và mất vài phút mỗi video."
+    )

@@ -16,6 +16,7 @@ from google.genai import types
 from podcast_studio.api_utils import call_with_retry, track_response
 
 TEXT_MODEL = "gemini-2.5-flash"
+VEO_MODEL = "veo-3.1-generate-preview"
 
 # Model đích để tinh chỉnh prompt image-to-video.
 TARGET_MODELS: dict[str, str] = {
@@ -211,6 +212,89 @@ def generate_sequence_prompt(
     )
     track_response(None, response, "text")
     return (response.text or "").strip()
+
+
+# ── Sinh VIDEO bằng Veo 3.1 (ảnh sản phẩm + storyboard + prompt) ────────────
+
+_VEO_POLL_TIMEOUT = 600  # giây
+_VEO_POLL_INTERVAL = 10
+
+
+def generate_video_veo(
+    client: genai.Client,
+    *,
+    prompt: str,
+    product_images: list[tuple[bytes, str]],
+    storyboard_image: bytes | None = None,
+    aspect_ratio: str = "9:16",
+    model: str = VEO_MODEL,
+) -> bytes:
+    """Tạo video bằng Veo 3.1 từ prompt + ảnh sản phẩm (ASSET) + ảnh storyboard (STYLE).
+
+    Trả về bytes video MP4. Veo cần key Gemini đã bật billing; quá trình mất vài phút.
+    """
+    import time
+
+    refs: list = []
+    for data, mime in product_images[:2]:
+        refs.append(
+            types.VideoGenerationReferenceImage(
+                image=types.Image(image_bytes=data, mime_type=mime or "image/png"),
+                reference_type=types.VideoGenerationReferenceType.ASSET,
+            )
+        )
+    if storyboard_image:
+        refs.append(
+            types.VideoGenerationReferenceImage(
+                image=types.Image(image_bytes=storyboard_image, mime_type="image/png"),
+                reference_type=types.VideoGenerationReferenceType.STYLE,
+            )
+        )
+
+    config = types.GenerateVideosConfig(
+        aspect_ratio=aspect_ratio,
+        number_of_videos=1,
+        reference_images=refs or None,
+        negative_prompt="human faces, on-screen text, captions, watermark, app interface",
+    )
+
+    operation = client.models.generate_videos(model=model, prompt=prompt, config=config)
+
+    deadline = time.time() + _VEO_POLL_TIMEOUT
+    while not operation.done and time.time() < deadline:
+        time.sleep(_VEO_POLL_INTERVAL)
+        operation = client.operations.get(operation)
+
+    if not operation.done:
+        raise RuntimeError(f"Veo quá thời gian chờ ({_VEO_POLL_TIMEOUT}s).")
+    if operation.error:
+        raise RuntimeError(f"Veo lỗi: {getattr(operation.error, 'message', None) or operation.error}")
+
+    result = operation.result
+    if not result.generated_videos:
+        raise RuntimeError("Veo không trả về video nào.")
+
+    video = result.generated_videos[0].video
+    # Cố tải bytes inline; nếu chưa có thì download từ file API / URI.
+    try:
+        client.files.download(file=video)
+    except Exception:
+        pass
+    data = getattr(video, "video_bytes", None)
+    if data:
+        return data
+
+    uri = getattr(video, "uri", None)
+    if uri:
+        import os
+        import requests
+        key = os.getenv("GEMINI_API_KEY") or os.getenv("API_KEY") or ""
+        sep = "&" if "?" in uri else "?"
+        r = requests.get(f"{uri}{sep}key={key}" if key else uri, timeout=300)
+        r.raise_for_status()
+        return r.content
+
+    raise RuntimeError("Veo trả về video nhưng không lấy được dữ liệu.")
 
 
 # ── Sinh 1 output hoàn chỉnh: ảnh storyboard + prompt ───────────────────────
