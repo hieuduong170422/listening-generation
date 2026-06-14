@@ -122,7 +122,11 @@ def generate_storyboard_dashscope(
         "product shown in place → open / activate it → main use → pour / fill / insert → "
         "wipe / clean → remove or replace a part → final tidy beauty shot.\n"
         + _FACELESS_CLEAN_RULES
-        + "- Overall image is HORIZONTAL / landscape; panels arranged in clean rows and columns.\n"
+        + "- EACH individual panel MUST be PORTRAIT orientation (vertical, clearly TALLER than wide, "
+        "like a phone-photo crop) — NOT wide landscape strips.\n"
+        "- Arrange the portrait panels in a GRID of 2 COLUMNS × several ROWS (e.g. 2×3 or 2×4), "
+        "equal size, with thin white gutters. Do NOT stack wide panels in a single column.\n"
+        "- The overall image is vertical/portrait.\n"
         "- Use the product reference image(s) for the EXACT product; use any scene screenshots "
         "ONLY for setting / composition / style inspiration.\n"
     )
