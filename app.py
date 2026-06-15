@@ -1,3 +1,4 @@
+import os
 import sys
 
 import streamlit as st
@@ -8,7 +9,18 @@ from paths import ROOT
 # Đưa thư mục src/ lên path để import 2 package: podcast_studio và prompt_template.
 sys.path.insert(0, str(ROOT / "src"))
 
+# Local dev: nạp biến từ .env. Trên Cloud không có file này nên call thành no-op.
 load_dotenv(ROOT / ".env")
+
+# Streamlit Cloud KHÔNG tự inject st.secrets vào os.environ. Bridge thủ công
+# để mọi `os.getenv("KEY")` đang dùng khắp codebase đều thấy được giá trị —
+# bất kể secret được set ở local .env hay Streamlit Cloud Secrets.
+try:
+    for _k, _v in st.secrets.items():
+        if isinstance(_v, str) and _k not in os.environ:
+            os.environ[_k] = _v
+except Exception:  # pragma: no cover — secrets file missing on first boot
+    pass
 
 st.set_page_config(page_title="Audivy Workspace", layout="wide")
 
