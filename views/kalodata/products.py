@@ -21,11 +21,12 @@ from kalodata.store import (
     list_snapshots,
     product_url,
     save_snapshot,
+    tiktok_url,
 )
 
 
 def _decorate_rows(rows: list[dict], country: str) -> pd.DataFrame:
-    """Add product_url column + drop heavy fields; reorder for display.
+    """Add tiktok_url + product_url columns; reorder for display.
 
     Note: kalocdn chặn hotlink theo Referer, st.column_config.ImageColumn
     sẽ load 403 → bỏ cột thumbnail ở DataFrame. Xem ảnh ở trang Home.
@@ -33,12 +34,15 @@ def _decorate_rows(rows: list[dict], country: str) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
+    df["tiktok_url"] = df["product_id"].apply(
+        lambda pid: tiktok_url(str(pid)) if pid else None
+    )
     df["product_url"] = df["product_id"].apply(
         lambda pid: product_url(str(pid), country) if pid else None
     )
     cols = [
         c for c in (
-            "rank", "product_name", "product_url",
+            "rank", "product_name", "tiktok_url", "product_url",
             "revenue", "sales", "price", "rating", "category", "product_id",
         ) if c in df.columns
     ]
@@ -46,8 +50,11 @@ def _decorate_rows(rows: list[dict], country: str) -> pd.DataFrame:
 
 
 _DF_COLUMN_CONFIG = {
+    "tiktok_url": st.column_config.LinkColumn(
+        "TikTok", display_text="🎵 Shop", width="small",
+    ),
     "product_url": st.column_config.LinkColumn(
-        "Link", display_text="🔗 kalodata", width="small",
+        "Kalodata", display_text="📊 Detail", width="small",
     ),
     "rank": st.column_config.NumberColumn("#", width="small"),
     "revenue": st.column_config.NumberColumn("Revenue (₫)", format="₫%.0f"),

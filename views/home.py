@@ -7,6 +7,7 @@ from kalodata.store import (
     get_latest_snapshot_id,
     get_snapshot,
     get_snapshot_rows,
+    tiktok_url,
 )
 
 # ── Custom CSS ─────────────────────────────────────────────────────────────
@@ -312,7 +313,7 @@ for chunk_start in range(0, len(rows), PER_ROW):
             )
 
             # Action buttons (Streamlit-native, dưới card)
-            bc1, bc2 = st.columns(2)
+            bc1, bc2, bc3 = st.columns(3)
             with bc1:
                 if images and st.button(
                     "🔍 Ảnh",
@@ -323,7 +324,14 @@ for chunk_start in range(0, len(rows), PER_ROW):
             with bc2:
                 if pid:
                     st.link_button(
-                        "Kalodata ↗",
+                        "🎵 TikTok",
+                        tiktok_url(pid),
+                        use_container_width=True,
+                    )
+            with bc3:
+                if pid:
+                    st.link_button(
+                        "📊 Kalo",
                         _kalodata_url(pid),
                         use_container_width=True,
                     )

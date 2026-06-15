@@ -14,9 +14,18 @@ KALODATA_PRODUCT_URL = (
     "&language=en-US&currency=VND&region={country}"
 )
 
+# TikTok Shop universal product URL — redirects to regional shop automatically.
+TIKTOK_PRODUCT_URL = "https://www.tiktok.com/view/product/{pid}"
+
 
 def product_url(product_id: str, country: str = "VN") -> str:
+    """Kalodata detail page (with full analytics)."""
     return KALODATA_PRODUCT_URL.format(pid=product_id, country=country)
+
+
+def tiktok_url(product_id: str) -> str:
+    """TikTok Shop product page — direct buy/view link."""
+    return TIKTOK_PRODUCT_URL.format(pid=product_id)
 
 # Field-name synonyms for the kalodata /product/queryList response. Each
 # tuple lists candidate keys in priority order. Numeric fields use the raw
