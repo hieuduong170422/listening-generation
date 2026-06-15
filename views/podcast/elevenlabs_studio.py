@@ -8,11 +8,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 from google import genai
 
-from auth import is_admin as _is_admin
 from paths import HISTORY_DIR
-from image_generator import generate_part_image
-from video_builder import build_part_video, concat_videos, ffmpeg_available
-from config import (
+from podcast_studio.auth import is_admin as _is_admin
+from podcast_studio.image_generator import generate_part_image
+from podcast_studio.video_builder import build_part_video, concat_videos, ffmpeg_available
+from podcast_studio.config import (
     AUDIENCE_LEVELS,
     DEFAULT_AUDIENCE,
     DEFAULT_CHANNEL_NAME,
@@ -31,23 +31,23 @@ from config import (
     TEXT_MODEL_OPTIONS,
     TONES,
 )
-from api_utils import DEFAULT_USD_TO_VND, summarize_usage
-from outline_generator import Outline, PartBrief, generate_outline
-from script_generator import extract_tail_lines, generate_part_script, parse_script_text
-from topic_suggester import suggest_topics
-from elevenlabs_tts import (
+from podcast_studio.api_utils import DEFAULT_USD_TO_VND, summarize_usage
+from podcast_studio.outline_generator import Outline, PartBrief, generate_outline
+from podcast_studio.script_generator import extract_tail_lines, generate_part_script, parse_script_text
+from podcast_studio.topic_suggester import suggest_topics
+from podcast_studio.elevenlabs_tts import (
     ElevenLabsError,
     list_voices as _el_list_voices,
     render_multi_speaker as _el_render_multi,
     render_single_voice as _el_render_single,
     voice_supports_model as _el_voice_supports_model,
 )
-from tts_settings import (
+from podcast_studio.tts_settings import (
     ELEVEN_MODELS,
     get_elevenlabs_api_key,
     load_settings as _el_load_settings,
 )
-from usage_logger import (
+from podcast_studio.usage_logger import (
     aggregate_by_period,
     aggregate_by_user,
     clear_log,
