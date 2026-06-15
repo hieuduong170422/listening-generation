@@ -193,6 +193,7 @@ def enrich_snapshot_media(snapshot_id: int, progress_callback=None) -> int:
 
 
 def list_snapshots(country: str | None = None, limit: int = 100) -> list[dict]:
+    init_db()
     conn = get_connection()
     try:
         if country:
@@ -212,6 +213,7 @@ def list_snapshots(country: str | None = None, limit: int = 100) -> list[dict]:
 
 
 def get_snapshot(snapshot_id: int) -> dict | None:
+    init_db()
     conn = get_connection()
     try:
         row = conn.execute(
@@ -223,6 +225,7 @@ def get_snapshot(snapshot_id: int) -> dict | None:
 
 
 def get_snapshot_rows(snapshot_id: int) -> list[dict]:
+    init_db()
     conn = get_connection()
     try:
         cursor = conn.execute(
@@ -244,6 +247,7 @@ def get_snapshot_rows(snapshot_id: int) -> list[dict]:
 
 
 def get_latest_snapshot_id(country: str | None = None) -> int | None:
+    init_db()
     conn = get_connection()
     try:
         if country:
@@ -262,6 +266,7 @@ def get_latest_snapshot_id(country: str | None = None) -> int | None:
 
 
 def delete_snapshot(snapshot_id: int) -> None:
+    init_db()
     conn = get_connection()
     try:
         # FK ON DELETE CASCADE handles products
