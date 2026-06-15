@@ -118,17 +118,18 @@ def _el_mark_voice_changed(speaker_idx: int) -> None:
 
 
 def _get_client():
-    """Return a Qwen/DashScope client that quacks like genai.Client.
-
-    All text generation (topics, outline, scripts) goes through Qwen-Plus.
-    Image generation (if invoked) would still hit Gemini and fail without
-    GEMINI_API_KEY — user is expected to skip image gen on this page.
-    """
-    from qwen_shim import QwenClient
+    """Return google-genai client. GEMINI_API_KEY required."""
+    key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if not key:
+        st.error(
+            "Chưa có `GEMINI_API_KEY` trong `.env`. "
+            "Lấy key tại https://aistudio.google.com/apikey rồi restart app."
+        )
+        st.stop()
     try:
-        return QwenClient()
-    except RuntimeError as e:
-        st.error(str(e))
+        return genai.Client(api_key=key)
+    except Exception as e:
+        st.error(f"Khởi tạo Gemini client thất bại: {e}")
         st.stop()
 
 
@@ -1265,20 +1266,10 @@ def _render_stats() -> None:
 def render() -> None:
     _init_state()
     st.title("🎧 ElevenLabs Podcast Builder — Long-form")
-    st.caption("Flow giống hệt Gemini Studio. Script gen dùng **Qwen-Plus** (DashScope), audio TTS dùng **ElevenLabs**. Hoàn toàn độc lập với Gemini.")
+    st.caption("**Text gen** dùng Gemini · **Audio TTS** dùng ElevenLabs.")
 
     if not get_elevenlabs_api_key():
-        st.error(
-            "Chưa có `ELEVENLABS_API_KEY` trong `.env`. "
-            "Thêm key rồi restart app."
-        )
-        st.stop()
-
-    if not (os.getenv("API_KEY") or os.getenv("DASHSCOPE_API_KEY")):
-        st.error(
-            "Chưa có `API_KEY` (DashScope) trong `.env`. "
-            "Thêm dòng `API_KEY=sk-...` rồi restart app."
-        )
+        st.error("Chưa có `ELEVENLABS_API_KEY` trong `.env`. Thêm key rồi restart app.")
         st.stop()
 
     user_badge = st.session_state.get("username", "")
