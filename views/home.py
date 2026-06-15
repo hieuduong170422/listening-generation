@@ -4,11 +4,29 @@ from __future__ import annotations
 import streamlit as st
 
 from kalodata.store import (
-    get_latest_snapshot_id,
-    get_snapshot,
-    get_snapshot_rows,
+    get_latest_snapshot_id as _get_latest_snapshot_id,
+    get_snapshot as _get_snapshot,
+    get_snapshot_rows as _get_snapshot_rows,
     tiktok_url,
 )
+
+
+# Cache reads so a Turso DB sitting in Tokyo doesn't get hit on every
+# Streamlit rerender. Cleared after 5 min so newly-fetched snapshots
+# from the daily cron show up automatically.
+@st.cache_data(ttl=300, show_spinner="Đang tải snapshot…")
+def get_latest_snapshot_id(country: str):
+    return _get_latest_snapshot_id(country=country)
+
+
+@st.cache_data(ttl=300)
+def get_snapshot(snapshot_id: int):
+    return _get_snapshot(snapshot_id)
+
+
+@st.cache_data(ttl=300)
+def get_snapshot_rows(snapshot_id: int):
+    return _get_snapshot_rows(snapshot_id)
 
 # ── Custom CSS ─────────────────────────────────────────────────────────────
 _CSS = """

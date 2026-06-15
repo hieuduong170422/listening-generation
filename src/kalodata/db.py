@@ -157,11 +157,23 @@ def get_connection():
     return conn
 
 
+_INIT_DONE = False
+
+
 def init_db() -> None:
+    """Idempotent schema bootstrap — runs ONCE per process.
+
+    Without this guard, every page render on Streamlit Cloud triggered
+    7 ALTER TABLE statements to a Tokyo Turso server (~150ms each from
+    a US server). Cache the fact that we've initialized so subsequent
+    reads only pay the one-query cost they actually need.
+    """
+    global _INIT_DONE
+    if _INIT_DONE:
+        return
     conn = get_connection()
     try:
         conn.executescript(_SCHEMA)
-        # Idempotent migrations for pre-existing DBs.
         for col, type_ in (
             ("image_urls", "TEXT"),
             ("video_urls", "TEXT"),
@@ -169,8 +181,7 @@ def init_db() -> None:
             ("commission_pct", "REAL"),
             ("launch_date", "TEXT"),
         ):
-            # Catch broadly: sqlite3 raises OperationalError, libsql (Turso)
-            # surfaces "duplicate column" as ValueError.
+            # sqlite3 raises OperationalError, libsql raises ValueError.
             try:
                 conn.execute(f"ALTER TABLE products ADD COLUMN {col} {type_}")
             except Exception:
@@ -178,6 +189,7 @@ def init_db() -> None:
         conn.commit()
     finally:
         conn.close()
+    _INIT_DONE = True
 
 
 def reset_db() -> None:
