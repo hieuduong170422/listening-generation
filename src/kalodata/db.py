@@ -169,10 +169,12 @@ def init_db() -> None:
             ("commission_pct", "REAL"),
             ("launch_date", "TEXT"),
         ):
+            # Catch broadly: sqlite3 raises OperationalError, libsql (Turso)
+            # surfaces "duplicate column" as ValueError.
             try:
                 conn.execute(f"ALTER TABLE products ADD COLUMN {col} {type_}")
-            except sqlite3.OperationalError:
-                pass  # already exists
+            except Exception:
+                pass  # column already exists
         conn.commit()
     finally:
         conn.close()
