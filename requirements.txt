@@ -7,5 +7,7 @@ Pillow>=10.0.0
 pydub>=0.25.1
 audioop-lts>=0.2.1; python_version >= "3.13"
 elevenlabs>=1.0.0
+requests>=2.31.0
+pandas>=2.0.0
 # Tuỳ chọn: chỉ cần khi dùng Turso/libsql cho Prompt Template Engine
 # libsql>=0.1.0

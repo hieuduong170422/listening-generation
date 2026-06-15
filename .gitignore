@@ -18,6 +18,7 @@ uploads/*
 *.db
 *.db-wal
 *.db-shm
+kalodata.db
 logs/
 .DS_Store
 .idea/

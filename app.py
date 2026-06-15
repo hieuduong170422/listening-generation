@@ -50,6 +50,9 @@ pages = {
     "🎬 Video Affiliate": [
         st.Page("views/affiliate/generate.py", title="Tạo Video Affiliate", icon="🎬", url_path="affiliate"),
     ],
+    "📊 Kalodata": [
+        st.Page("views/kalodata/products.py", title="Product Explorer", icon="📊", url_path="kalodata-products"),
+    ],
 }
 
 # expanded=True: luôn mở hết, không thu gọn nhóm / không "View X more".
