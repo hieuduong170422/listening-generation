@@ -62,6 +62,42 @@ st.caption(
     "Fetch product list từ kalodata.com, lưu DB local, "
     "so sánh snapshot để phát hiện trending."
 )
+
+with st.expander("🔧 Diagnostic (kiểm tra cookie / kết nối)", expanded=False):
+    import os as _os
+    cookie = (_os.getenv("KALODATA_COOKIE") or "").strip()
+    dc1, dc2, dc3 = st.columns(3)
+    dc1.metric("Cookie length", len(cookie))
+    dc2.metric("Has cf_clearance", "✓" if "cf_clearance=" in cookie else "✗")
+    dc3.metric("Has SESSION", "✓" if "SESSION=" in cookie else "✗")
+    if cookie:
+        st.caption(f"Đầu: `{cookie[:60]}...`")
+        st.caption(f"Cuối: `...{cookie[-60:]}`")
+    if st.button("🧪 Test fetch (1 request, không lưu)"):
+        with st.spinner("Đang gọi…"):
+            try:
+                from kalodata.client import query_products
+                resp = query_products(
+                    start_date="2026-06-08", end_date="2026-06-14",
+                    page_no=1, page_size=10,
+                )
+                from kalodata.client import extract_rows
+                rows = extract_rows(resp)
+                st.success(f"✅ OK — fetched {len(rows)} rows. Cookie + IP đều OK.")
+            except Exception as e:
+                err_str = str(e)
+                if "403" in err_str or "Just a moment" in err_str or "cf_clearance" in err_str:
+                    st.error(
+                        "❌ **Cloudflare chặn (403)**\n\n"
+                        "Nguyên nhân khả năng cao:\n"
+                        "1. **IP mismatch** — `cf_clearance` được Cloudflare cấp gắn với "
+                        "IP của browser m. Server Streamlit Cloud có IP khác → Cloudflare "
+                        "phát hiện mismatch → reject.\n"
+                        "2. Cookie expired (sau 30-60 phút).\n\n"
+                        f"Raw: {err_str[:300]}"
+                    )
+                else:
+                    st.error(f"❌ {type(e).__name__}: {err_str[:500]}")
 st.warning(
     "⚠️ **Gói kalodata hiện tại của bạn chỉ cho xem 10 rows/query** (pageSize=10, pageNo=1). "
     "Fetch nhiều hơn = server trả 'Upgrade to view more data'. "
