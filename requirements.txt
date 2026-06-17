@@ -9,6 +9,8 @@ audioop-lts>=0.2.1; python_version >= "3.13"
 elevenlabs>=1.0.0
 requests>=2.31.0
 pandas>=2.0.0
+# Vertex AI Veo xuất video ra GCS bucket → cần để tải file .mp4 về (Phase 2 affiliate).
+google-cloud-storage>=2.16.0
 # Turso (libSQL) — cần khi deploy lên Streamlit Cloud để Cloud đọc cùng DB
 # mà local cron ghi vào (kalodata + prompt_template đều dùng chung instance).
 libsql>=0.1.0

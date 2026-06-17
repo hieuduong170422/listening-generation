@@ -1,5 +1,7 @@
 """Generate Video Affiliate (UGC) — ảnh sản phẩm + scene → N ảnh storyboard nhiều bước + N prompt video."""
 
+import os
+
 import streamlit as st
 from google import genai
 
@@ -8,11 +10,13 @@ from podcast_studio.api_utils import is_hard_quota_error
 from podcast_studio.affiliate import (
     TARGET_MODELS,
     DEFAULT_TARGET,
-    DASHSCOPE_IMAGE_MODELS,
     DEFAULT_IMAGE_MODEL,
-    MAX_DASHSCOPE_IMAGES,
+    MAX_REF_IMAGES,
     DEFAULT_PANELS,
+    DEFAULT_VIDEO_CLIPS,
+    MAX_VIDEO_CLIPS,
     generate_ugc_storyboard,
+    generate_review_video,
     generate_video_veo,
 )
 
@@ -20,14 +24,33 @@ from podcast_studio.affiliate import (
 def _friendly_error(e: Exception) -> str:
     if is_hard_quota_error(e):
         return (
-            "Hết quota cho model AI. Nếu là Gemini: key free tier không sinh được ảnh — "
-            "bật billing tại https://aistudio.google.com/apikey, hoặc dùng model ảnh DashScope."
+            "Hết quota cho model AI. Nano Banana (sinh ảnh) cần GEMINI_API_KEY đã bật billing — "
+            "bật tại https://aistudio.google.com/apikey."
         )
     msg = str(e)
     return msg if len(msg) <= 300 else msg[:300] + "…"
 
 
+def _vertex_enabled() -> bool:
+    return os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() in ("1", "true", "yes")
+
+
 def _get_client() -> genai.Client:
+    """Vertex AI (dùng credit GCP) nếu bật GOOGLE_GENAI_USE_VERTEXAI; nếu không thì key Gemini."""
+    if _vertex_enabled():
+        project = os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
+        location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1").strip() or "us-central1"
+        if not project:
+            st.error("Vertex AI: thiếu GOOGLE_CLOUD_PROJECT trong .env.")
+            st.stop()
+        try:
+            return genai.Client(vertexai=True, project=project, location=location)
+        except Exception as e:
+            st.error(
+                f"Không tạo được Vertex client: {e}\n\n"
+                "Chạy `gcloud auth application-default login` để xác thực."
+            )
+            st.stop()
     api_key = _get_api_key()
     if not api_key:
         st.error("Chưa có API key. Nhập GEMINI_API_KEY trong .env hoặc ô 🔑 API Key ở sidebar.")
@@ -35,8 +58,31 @@ def _get_client() -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
+def _normalize_image(data: bytes, mime: str) -> tuple[bytes, str]:
+    """Chuẩn hoá ảnh input để AI đọc rõ: RGB, upscale ảnh quá nhỏ, cap ảnh quá lớn, lưu PNG lossless."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        im = Image.open(BytesIO(data)).convert("RGB")
+        long_side = max(im.size)
+        scale = None
+        if long_side < 1280:        # ảnh nhỏ → phóng lên cho rõ chi tiết sản phẩm
+            scale = 1280 / long_side
+        elif long_side > 2048:      # ảnh quá lớn → thu về mức hợp lý (vẫn nét)
+            scale = 2048 / long_side
+        if scale:
+            im = im.resize((round(im.width * scale), round(im.height * scale)), Image.LANCZOS)
+        out = BytesIO()
+        im.save(out, "PNG")         # PNG = không nén mất chất lượng
+        return out.getvalue(), "image/png"
+    except Exception:
+        return data, mime
+
+
 def _read_uploads(files) -> list[tuple[bytes, str]]:
-    return [(f.getvalue(), f.type or "image/png") for f in (files or [])]
+    return [_normalize_image(f.getvalue(), f.type or "image/png") for f in (files or [])]
 
 
 st.title("🎬 Generate Video Affiliate — UGC")
@@ -57,27 +103,29 @@ with c1:
         help="Ảnh sản phẩm rõ nét, nhiều góc càng tốt.",
     )
     if product_files:
-        st.image([f for f in product_files], width=90)
+        st.image([f for f in product_files], width=150)
+        st.caption("✅ Ảnh gửi tới AI ở chất lượng gốc (đã chuẩn hoá, không thu nhỏ).")
 with c2:
     scene_files = st.file_uploader(
         "Ảnh scene tham khảo",
         type=["png", "jpg", "jpeg", "webp"],
         accept_multiple_files=True,
         key="_ugc_scenes",
-        help="Tuỳ chọn — gợi ý bối cảnh / bố cục / phong cách.",
+        help="Nên có! Ảnh CHỤP THỰC TẾ sản phẩm → dùng làm 'mỏ neo' độ chân thực: model bắt chước "
+             "ánh sáng/chất liệu/cảm giác ảnh thật để output bớt giả.",
     )
     if scene_files:
-        st.image([f for f in scene_files], width=90)
+        st.image([f for f in scene_files], width=150)
 
 _total_imgs = len(product_files or []) + len(scene_files or [])
 st.caption(
-    f"ℹ️ Model DashScope chỉ nhận tối đa **{MAX_DASHSCOPE_IMAGES} ảnh** tham chiếu/lần "
-    "(ưu tiên ảnh sản phẩm trước, rồi tới ảnh scene)."
+    f"ℹ️ **Nano Banana** dùng trực tiếp ảnh sản phẩm (giữ ĐÚNG sản phẩm) — tối đa "
+    f"**{MAX_REF_IMAGES} ảnh**/lần (ưu tiên ảnh sản phẩm trước, rồi ảnh scene). "
+    "Up 1-3 ảnh sản phẩm rõ nét, nhiều góc để model bám sát nhất."
 )
-if _total_imgs > MAX_DASHSCOPE_IMAGES:
+if _total_imgs > MAX_REF_IMAGES:
     st.warning(
-        f"Bạn đã chọn {_total_imgs} ảnh — chỉ **{MAX_DASHSCOPE_IMAGES} ảnh đầu** được dùng. "
-        "Nên giữ 1-2 ảnh sản phẩm rõ nét để model bám đúng sản phẩm."
+        f"Bạn đã chọn {_total_imgs} ảnh — chỉ **{MAX_REF_IMAGES} ảnh đầu** được dùng."
     )
 
 # ── Bước 2: Cấu hình ───────────────────────────────────────────────────────
@@ -94,14 +142,10 @@ with cc1:
 with cc2:
     panels = st.slider("Số bước/panel mỗi ảnh", min_value=4, max_value=8, value=DEFAULT_PANELS, key="_ugc_panels")
 with cc3:
-    image_model = st.selectbox(
-        "Model sinh ảnh (DashScope)",
-        options=list(DASHSCOPE_IMAGE_MODELS.keys()),
-        index=list(DASHSCOPE_IMAGE_MODELS.keys()).index(DEFAULT_IMAGE_MODEL),
-        format_func=lambda k: DASHSCOPE_IMAGE_MODELS[k],
-        key="_ugc_image_model",
-        help="Dùng key DASHSCOPE_API_KEY. Prompt video do Gemini sinh (đọc ảnh sản phẩm).",
-    )
+    image_model = DEFAULT_IMAGE_MODEL
+    st.markdown("**Model sinh ảnh**")
+    engine = "🟢 Vertex AI" if _vertex_enabled() else "Key Gemini"
+    st.caption(f"Nano Banana\n({engine})")
 with cc4:
     target_model = st.selectbox(
         "Model video đích",
@@ -111,6 +155,29 @@ with cc4:
         key="_ugc_target",
     )
 
+vc1, vc2 = st.columns([1.2, 1])
+with vc1:
+    video_mode = st.radio(
+        "🎬 Chế độ tạo video",
+        options=["multiscene", "storyboard"],
+        format_func=lambda m: {
+            "multiscene": "Nhiều cảnh — mỗi cảnh 1 góc, nối lại (NÊN DÙNG)",
+            "storyboard": "1 clip từ ảnh storyboard + prompt (giống Gemini app)",
+        }[m],
+        key="_ugc_video_mode",
+        help="• Nhiều cảnh: mỗi clip = 1 cảnh/góc quay riêng theo flow rồi nối → video NHIỀU GÓC, có chuyển "
+             "cảnh (chọn số cảnh bên phải).\n• Storyboard: gửi cả ảnh lưới + prompt cho Veo (1 clip 8s, 1 góc) "
+             "— giống thao tác tay trên gemini.google.com.",
+    )
+with vc2:
+    video_clips = st.slider(
+        "Số cảnh / góc quay (chế độ Nhiều cảnh)",
+        min_value=1, max_value=MAX_VIDEO_CLIPS, value=DEFAULT_VIDEO_CLIPS, key="_ugc_clips",
+        help=f"Mỗi cảnh = 1 góc quay riêng (~8s), nối lại → nhiều góc/chuyển cảnh. "
+             f"Càng nhiều cảnh càng phong phú nhưng càng tốn credit & lâu (mỗi cảnh 1 lần gen Veo). "
+             f"Vd 5 cảnh ≈ 40s.",
+    )
+
 if st.button("🚀 Sinh storyboard + prompt", type="primary"):
     if not product_files:
         st.error("Cần ít nhất 1 ảnh sản phẩm.")
@@ -118,6 +185,7 @@ if st.button("🚀 Sinh storyboard + prompt", type="primary"):
         product_images = _read_uploads(product_files)
         scene_images = _read_uploads(scene_files)
         st.session_state["_ugc_product_imgs"] = product_images  # dùng lại cho bước tạo video
+        st.session_state["_ugc_scene_imgs"] = scene_images       # ảnh scene = neo độ chân thực
         client = _get_client()
         results = []
         total = int(n)
@@ -175,6 +243,7 @@ if results:
                         key=f"_dl_img_{idx}",
                         use_container_width=True,
                     )
+                do_generate = False
                 if item.get("video"):
                     st.video(item["video"])
                     st.download_button(
@@ -185,21 +254,42 @@ if results:
                         key=f"_dl_vid_{idx}",
                         use_container_width=True,
                     )
-                elif st.button("🎬 Tạo video (Veo 3.1)", key=f"_mkvid_{idx}", use_container_width=True):
-                    prod = st.session_state.get("_ugc_product_imgs", [])
+                    if st.button(
+                        "🔄 Tạo lại video", key=f"_regen_vid_{idx}", use_container_width=True,
+                        help="Chưa ưng? Gen lại video mới (mỗi lần tốn credit).",
+                    ):
+                        do_generate = True
+                elif st.button("🎬 Tạo video", key=f"_mkvid_{idx}", use_container_width=True):
+                    do_generate = True
+
+                if do_generate:
                     client = _get_client()
-                    with st.spinner("Veo 3.1 đang dựng video (có thể mất vài phút)..."):
-                        try:
-                            vid = generate_video_veo(
-                                client,
-                                prompt=item.get("prompt") or "",
-                                product_images=prod,
-                                storyboard_image=item.get("image"),
-                            )
-                            item["video"] = vid  # lưu vào kết quả (persist qua session_state)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(_friendly_error(e))
+                    mode = st.session_state.get("_ugc_video_mode", "storyboard")
+                    prod = st.session_state.get("_ugc_product_imgs", [])
+                    try:
+                        if mode == "storyboard":
+                            # Y như Gemini app: gửi đúng ảnh storyboard đã sinh + prompt → 1 clip i2v.
+                            with st.spinner("⏳ Veo đang dựng video (~2-4 PHÚT). ĐỪNG đóng/đổi tab — cứ chờ..."):
+                                vid = generate_video_veo(
+                                    client,
+                                    prompt=item.get("prompt") or "",
+                                    product_images=[],
+                                    storyboard_image=item.get("image"),
+                                )
+                        else:
+                            nclips = int(st.session_state.get("_ugc_clips", DEFAULT_VIDEO_CLIPS))
+                            with st.spinner(f"⏳ Veo đang dựng {nclips} cảnh rồi nối (~3-5 PHÚT). ĐỪNG đóng/đổi tab — cứ chờ..."):
+                                vid = generate_review_video(
+                                    client,
+                                    product_images=prod,
+                                    scene_images=st.session_state.get("_ugc_scene_imgs", []),
+                                    idea=st.session_state.get("_ugc_idea", "") or "",
+                                    clips=nclips,
+                                )
+                        item["video"] = vid  # lưu vào kết quả (persist qua session_state)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(_friendly_error(e))
 
             # ── Cột phải: prompt ──
             with right:
@@ -218,6 +308,7 @@ if results:
             key="_dl_all_prompts",
         )
     st.caption(
-        "🎬 Nút **Tạo video (Veo 3.1)** dùng ảnh sản phẩm (ASSET) + ảnh storyboard (STYLE) + prompt. "
-        "Veo cần **key Gemini đã bật billing** và mất vài phút mỗi video."
+        "🎬 Nút **Tạo video review (nhiều cảnh)** sinh nhiều clip **Veo 3.1** (mỗi cảnh ~8s, giữ đúng "
+        "sản phẩm qua ảnh sản phẩm) rồi **nối liên tục** bằng ffmpeg thành 1 video review dài. "
+        "Số cảnh chỉnh ở Bước 2. Trừ credit GCP, mỗi cảnh mất vài phút."
     )
