@@ -53,6 +53,8 @@ _UGC_REVIEW_STYLE = (
     "NOT messy, NOT gritty, NOT low quality. FACELESS: show only clean hands/forearms holding or using "
     "the product, or the product by itself; never a human face or full body. "
     "The product is the clear HERO, well-lit and in focus. "
+    "FILL THE ENTIRE vertical 9:16 frame edge-to-edge with the photo — absolutely NO black bars, "
+    "NO letterbox or cinematic bars, NO top/bottom borders, NO padding, NO split-screen, NO framing border. "
     "No on-screen text, no app / TikTok / Reels interface, no icons, no captions baked in, "
     "no logo overlay, no watermark."
 )
@@ -102,6 +104,38 @@ def _image_parts(images: list[tuple[bytes, str]]) -> list:
     ]
 
 
+def _remove_letterbox(data: bytes, thresh: int = 18) -> bytes:
+    """Cắt viền đen (letterbox) quanh ảnh rồi phủ kín lại đúng khung 9:16 gốc (full-bleed). Lỗi → trả nguyên."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        im = Image.open(BytesIO(data)).convert("RGB")
+        W, H = im.size
+        # bbox phần KHÔNG đen (sáng hơn ngưỡng) → loại viền đen đồng nhất quanh mép.
+        mask = im.convert("L").point(lambda p: 255 if p > thresh else 0)
+        bbox = mask.getbbox()
+        if not bbox:
+            return data
+        l, t, r, b = bbox
+        if t <= 2 and l <= 2 and r >= W - 2 and b >= H - 2:
+            return data  # không có viền đáng kể
+        cropped = im.crop(bbox)
+        # phủ kín (cover) về đúng kích thước 9:16 gốc: scale to cover rồi crop giữa.
+        cw, ch = cropped.size
+        scale = max(W / cw, H / ch)
+        nw, nh = max(1, round(cw * scale)), max(1, round(ch * scale))
+        cropped = cropped.resize((nw, nh), Image.LANCZOS)
+        left, top = (nw - W) // 2, (nh - H) // 2
+        out_im = cropped.crop((left, top, left + W, top + H))
+        out = BytesIO()
+        out_im.save(out, "PNG")
+        return out.getvalue()
+    except Exception:
+        return data
+
+
 def _extract_genai_image(response) -> bytes:
     """Lấy bytes ảnh inline đầu tiên từ response generate_content của Gemini."""
     candidates = getattr(response, "candidates", None) or []
@@ -125,21 +159,37 @@ def generate_storyboard_banana(
     scene_images: list[tuple[bytes, str]],
     idea: str,
     panels: int = DEFAULT_PANELS,
+    steps: list[str] | None = None,
     variation_index: int = 1,
     total: int = 1,
     model: str = DEFAULT_IMAGE_MODEL,
 ) -> bytes:
-    """Sinh 1 ảnh storyboard dạng lưới (panels panel) bằng Nano Banana → bytes ảnh."""
+    """Sinh 1 ảnh storyboard dạng lưới bằng Nano Banana → bytes ảnh.
+
+    Nếu truyền `steps` (danh sách cảnh tường minh) → mỗi panel = ĐÚNG 1 cảnh trong đó
+    (panel khớp 1-1 với cảnh video). Không truyền → dùng flow review mặc định `panels` bước.
+    """
+    if steps:
+        panels = len(steps)
+        steps_lines = "; ".join(f"{i + 1}) {s}" for i, s in enumerate(steps))
+        order_block = (
+            f"Each panel = ONE step, in this EXACT order (use these exact scenes, one per panel): "
+            f"{steps_lines}.\n"
+        )
+    else:
+        order_block = (
+            "Each panel = ONE step, in this review order: "
+            "1) hands opening the delivery box / unboxing, 2) taking the product out of the box / first look, "
+            "3) close-up of the product's key detail, 4) setting it up (plug in / mount / place it), "
+            "5) the product turned on and working, 6) hands using / interacting with it, "
+            "7) the product in real use in the room, 8) final beauty shot in a styled home setting.\n"
+        )
     instruction = (
         f"Create ONE photorealistic STORYBOARD GRID image: a neat grid of {panels} equal panels "
         "(thin clean white gutters between panels) — a faceless UGC product-REVIEW sequence for TikTok, "
         "from unboxing to using and experiencing the product.\n"
-        "Each panel = ONE step, in this review order: "
-        "1) hands opening the delivery box / unboxing, 2) taking the product out of the box / first look, "
-        "3) close-up of the product's key detail, 4) setting it up (plug in / mount / place it), "
-        "5) the product turned on and working, 6) hands using / interacting with it, "
-        "7) the product in real use in the room, 8) final beauty shot in a styled home setting.\n"
-        "CRITICAL — PRODUCT CONSISTENCY: every single panel must show the EXACT SAME product as the "
+        + order_block
+        + "CRITICAL — PRODUCT CONSISTENCY: every single panel must show the EXACT SAME product as the "
         "reference image — identical design, shape, size, color, digits/LED layout and every detail. "
         "DO NOT invent different product variants, DO NOT change the product between panels, "
         "DO NOT add any brand text or logo onto it.\n"
@@ -194,22 +244,37 @@ def _scene_image_banana(
     scene_images: list[tuple[bytes, str]] | None = None,
     subject_desc: str,
     scene: str,
+    storyboard_image: bytes | None = None,
     model: str = DEFAULT_IMAGE_MODEL,
 ) -> bytes:
-    """1 frame góc quay đơn (9:16) giữ ĐÚNG sản phẩm — dùng làm first-frame cho Veo image-to-video."""
+    """1 frame góc quay đơn (9:16) giữ ĐÚNG sản phẩm — dùng làm first-frame cho Veo image-to-video.
+
+    Nếu có `storyboard_image` (ảnh lưới của clip) → neo frame bám ĐÚNG sản phẩm như trong storyboard
+    (cùng mọi chi tiết đặc trưng: mắt, chân, màu...), tránh sinh lại lệch sản phẩm.
+    """
     scene_images = scene_images or []
     instruction = (
         f"Create ONE photorealistic vertical 9:16 photo for a TikTok product review. {scene}\n"
-        f"Show the EXACT SAME product as the PRODUCT reference image — identical {subject_desc}: same design, "
-        "shape, size, color, digits/LED layout and every detail. DO NOT invent a different product, "
-        "DO NOT change it, DO NOT add any brand text or logo onto it.\n"
-        "If SCENE reference image(s) are given, treat them as the REALISM ANCHOR (real-life photos of this "
+        f"Show the EXACT SAME product as the reference image(s) — identical {subject_desc}: same design, "
+        "shape, size, color, and EVERY distinctive detail (eyes/face, feet/base, patterns). DO NOT invent a "
+        "different product variant, DO NOT change it, DO NOT add any brand text or logo onto it.\n"
+        + (
+            "A STORYBOARD reference image is also provided — it shows this EXACT product and the intended "
+            "scene. The product MUST look IDENTICAL to how it appears in the storyboard (same distinctive "
+            "features, same colors, same eyes and feet); just render this one scene as a single clean "
+            "full-frame vertical photo.\n"
+            if storyboard_image else ""
+        )
+        + "If SCENE reference image(s) are given, treat them as the REALISM ANCHOR (real-life photos of this "
         "product): match their authentic real-photo look — real lighting, textures, depth of field, camera "
         "feel. Make it look like a REAL PHOTO, NOT a 3D render or CGI.\n"
         + _PHYSICAL_LOGIC_RULES + _UGC_REVIEW_STYLE
     )
     contents: list = ["PRODUCT REFERENCE IMAGE(S):"]
     contents += _image_parts(product_images[:MAX_REF_IMAGES])
+    if storyboard_image:
+        contents.append("STORYBOARD REFERENCE (match this EXACT product look — same eyes, feet, colors):")
+        contents += _image_parts([(storyboard_image, "image/png")])
     if scene_images:
         contents.append("SCENE REFERENCE IMAGE(S) (real-life look to match):")
         contents += _image_parts(scene_images[:MAX_REF_IMAGES])
@@ -226,7 +291,7 @@ def _scene_image_banana(
         ),
     )
     track_response(None, resp, "image")
-    return _extract_genai_image(resp)
+    return _remove_letterbox(_extract_genai_image(resp))  # bỏ viền đen → frame full 9:16 cho Veo
 
 
 # ── Sinh ảnh THỰC giữ đúng sản phẩm bằng Imagen Customization + ghép lưới ────
@@ -237,11 +302,15 @@ def _plan_steps(
     product_images: list[tuple[bytes, str]],
     idea: str,
     panels: int,
+    directions: str = "",
     variation_index: int = 1,
     total: int = 1,
     text_model: str = TEXT_MODEL,
 ) -> tuple[str, list[str]]:
-    """Hỏi Gemini: tên sản phẩm ngắn + danh sách `panels` cảnh (mỗi cảnh 1 bước, faceless)."""
+    """Hỏi Gemini: tên sản phẩm ngắn + danh sách `panels` cảnh (mỗi cảnh 1 bước, faceless).
+
+    `directions` = yêu cầu cụ thể của user về cảnh/góc quay → ƯU TIÊN, ghi đè flow mặc định khi mâu thuẫn.
+    """
     import json
     import re
 
@@ -254,9 +323,16 @@ def _plan_steps(
         "the result or benefit -> final satisfying shot in the real setting. "
         "Each step = a short visual description of ONE shot, faceless (hands/forearms only or product alone), "
         "clean premium lifestyle look in a tidy real home. Each scene <= 18 words, concrete. "
+        "Each step MAY specify a camera angle/movement (close-up, top-down, low angle, push-in, pan...). "
         "Keep each shot SIMPLE (one product, at most hands — no clutter). "
         "DO NOT place the scene in front of a mirror or any reflective surface (avoids showing people)."
     )
+    if directions.strip():
+        instruction += (
+            " USER REQUIREMENTS (HIGHEST PRIORITY — build the steps around these specific scenes / camera "
+            "angles, and OVERRIDE the default order where they conflict; keep the rest of the flow to fill "
+            f"the remaining steps): {directions.strip()}."
+        )
     if idea.strip():
         instruction += f" Product/context: {idea.strip()}."
     if total > 1:
@@ -280,6 +356,37 @@ def _plan_steps(
         product = idea[:40].strip() or "product"
         steps = []
     return product, steps[:panels]
+
+
+def plan_review_flow(
+    client: genai.Client,
+    *,
+    product_images: list[tuple[bytes, str]],
+    idea: str,
+    clips: int,
+    beats_per_clip: int,
+    directions: str = "",
+    variation_index: int = 1,
+    total: int = 1,
+) -> tuple[str, list[list[str]]]:
+    """Lên flow review MỘT lần rồi chia thành `clips` nhóm, mỗi nhóm `beats_per_clip` cảnh.
+
+    Đây là kế hoạch DUY NHẤT dùng chung cho cả ảnh storyboard, prompt text và video clip
+    → panel ↔ prompt ↔ cảnh video khớp 1-1. `directions` = yêu cầu cảnh/góc quay cụ thể của user (ưu tiên).
+    Trả về (tên sản phẩm, danh sách nhóm cảnh).
+    """
+    clips = max(1, clips)
+    beats_per_clip = max(1, beats_per_clip)
+    total_beats = clips * beats_per_clip
+    product, steps = _plan_steps(
+        client, product_images=product_images, idea=idea, panels=total_beats,
+        directions=directions, variation_index=variation_index, total=total,
+    )
+    if not steps:
+        steps = [f"the {product} shown and used by faceless hands in a tidy home"]
+    steps = (steps * (total_beats // len(steps) + 1))[:total_beats]
+    groups = [steps[i * beats_per_clip:(i + 1) * beats_per_clip] for i in range(clips)]
+    return product, groups
 
 
 def _imagen_scene(
@@ -416,12 +523,35 @@ def generate_sequence_prompt(
     product_images: list[tuple[bytes, str]],
     idea: str,
     target_model: str = DEFAULT_TARGET,
+    steps: list[str] | None = None,
+    directions: str = "",
     variation_index: int = 1,
     total: int = 1,
     text_model: str = TEXT_MODEL,
 ) -> str:
-    """Sinh 1 prompt video review TikTok UGC (faceless, tiếng Anh), mô tả đúng sản phẩm trong ảnh."""
+    """Sinh 1 prompt video review TikTok UGC (faceless, tiếng Anh), mô tả đúng sản phẩm trong ảnh.
+
+    Nếu truyền `steps` → flow review dùng ĐÚNG các cảnh đó (khớp với panel storyboard + clip video).
+    `directions` = yêu cầu cảnh/góc quay cụ thể của user → ưu tiên đưa vào Camera/flow.
+    """
     target_label = TARGET_MODELS.get(target_model, TARGET_MODELS[DEFAULT_TARGET])
+    if steps:
+        flow_lines = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(steps))
+        flow_block = (
+            "Review flow (use EXACTLY these scenes, in order, one line each — do NOT add or drop any):\n"
+            f"{flow_lines}\n\n"
+        )
+    else:
+        flow_block = (
+            "Review flow:\n"
+            "1. Hook: a close, attention-grabbing shot of the product in hand.\n"
+            "2. <unboxing / first impression>\n"
+            "3. <show a key feature or detail in close-up>\n"
+            "4. <hands demonstrate the main use>\n"
+            "5. <show it working / the result or benefit>\n"
+            "6. <final satisfying shot in the real setting>\n"
+            "(list 5-8 concrete steps suited to THIS product, faceless, hands only, natural review order)\n\n"
+        )
     instruction = (
         f"You write prompts for a FACELESS TikTok UGC product-REVIEW video for {target_label} "
         "(vertical 9:16). Look at the product image(s) and write ONE prompt in ENGLISH "
@@ -429,14 +559,7 @@ def generate_sequence_prompt(
         "Create a clean, premium vertical TikTok-style UGC review video of "
         "<one concise product description> (exactly like the reference image), in a tidy real home, "
         "faceless (hands only).\n\n"
-        "Review flow:\n"
-        "1. Hook: a close, attention-grabbing shot of the product in hand.\n"
-        "2. <unboxing / first impression>\n"
-        "3. <show a key feature or detail in close-up>\n"
-        "4. <hands demonstrate the main use>\n"
-        "5. <show it working / the result or benefit>\n"
-        "6. <final satisfying shot in the real setting>\n"
-        "(list 5-8 concrete steps suited to THIS product, faceless, hands only, natural review order)\n\n"
+        + flow_block +
         "Camera: smooth, steady close-ups on hands and product, POV and slight top-down, vertical 9:16, "
         "keep product proportions consistent.\n"
         "Lighting: soft, bright, flattering natural daylight — clean and premium, NOT messy or gritty.\n"
@@ -449,6 +572,11 @@ def generate_sequence_prompt(
         "All actions must be faceless (hands only) and authentic phone-shot. "
         "Output ONLY the prompt text — no preamble, no markdown fences, no extra commentary.\n"
     )
+    if directions.strip():
+        instruction += (
+            f"USER REQUIREMENTS (HIGHEST PRIORITY — honor these specific scenes / camera angles, "
+            f"reflect them in the flow and Camera line): {directions.strip()}\n"
+        )
     if idea.strip():
         instruction += f"Extra context: {idea.strip()}\n"
     if total > 1:
@@ -477,29 +605,51 @@ def _optimize_video_prompt(
     base_prompt: str,
     *,
     first_frame: bytes | None = None,
+    storyboard_context: bytes | None = None,
+    beats: int = 1,
     text_model: str = TEXT_MODEL,
 ) -> str:
     """Cấu trúc lại prompt thành 'super prompt' Veo thích đọc (như Gemini app pre-process).
 
-    Nhìn cả frame đầu (nếu có) để mô tả chuyển động từ ảnh đó. Lỗi thì trả prompt gốc.
+    Nhìn cả frame đầu (nếu có) để mô tả chuyển động từ ảnh đó. Nếu có `storyboard_context`
+    (ảnh lưới storyboard của clip này) → lớp Omni đọc nó để bám đúng các cảnh & bố cục đã lên.
+    Lỗi thì trả prompt gốc.
+    `beats` = số nhịp/cảnh nhồi vào 1 clip 8s: 1 = một cú máy liên tục (mặc định, mượt nhất);
+    >=2 = montage cắt nhanh nhiều nhịp trong 8s (nhiều cảnh hơn nhưng dễ giật hơn).
     """
+    if beats and beats >= 2:
+        per = max(2, round(8 / beats))
+        action_rule = (
+            f"- This clip is a FAST MONTAGE of EXACTLY {beats} short consecutive beats (~{per}s each) shown in "
+            "order with CLEAN HARD CUTS between them — KEEP ALL the beats from the request, do NOT drop any. "
+            "Each beat is ONE simple action; between beats use a quick clean cut, NEVER a morph/warp transition.\n"
+        )
+    else:
+        action_rule = (
+            "- Describe ONLY ONE simple, slow, smooth, continuous action (~8s). If the request lists several "
+            "steps, PICK JUST ONE coherent action — do NOT cram multiple steps (cramming causes chaotic, "
+            "unnatural motion).\n"
+        )
     instruction = (
         "You are a Veo 3.1 video-prompt engineer. Rewrite the request below into ONE optimized English "
         "prompt that Veo 3.1 reads best. Structure it clearly in this order: "
         "[Scene/setting] [Subject — keep the product IDENTICAL to the starting image] "
-        "[ONE single action] [Camera movement] [Lighting] [Mood & style] [Motion & physics].\n"
+        "[Action(s)] [Camera movement] [Lighting] [Mood & style] [Motion & physics].\n"
         "CRITICAL for natural, non-glitchy motion:\n"
-        "- Describe ONLY ONE simple, slow, smooth, continuous action (~8s). If the request lists several "
-        "steps, PICK JUST ONE coherent action — do NOT cram multiple steps (cramming causes chaotic, "
-        "unnatural motion).\n"
+        + action_rule +
         "- Enforce REALISTIC PHYSICS: objects are solid with real weight; hands grip and touch the product "
         "naturally and NEVER pass through / clip into the product, surfaces or each other; no morphing, no "
-        "warping, no melting; the product keeps its exact shape; calm, minimal, steady motion.\n"
+        "warping, no melting; the product keeps its exact shape across every cut; calm, steady motion.\n"
         "Constraints: vertical 9:16; FACELESS (hands/forearms only, no human face); clean premium UGC "
         "review look; NO on-screen text, NO captions, NO logo, NO watermark. "
         "Output ONLY the final prompt text — no preamble, no markdown.\n\nREQUEST:\n" + base_prompt
     )
     contents: list = []
+    if storyboard_context:
+        contents.append(
+            "STORYBOARD (the planned scenes, order, framing & composition for THIS clip — follow it):"
+        )
+        contents += _image_parts([(storyboard_context, "image/png")])
     if first_frame:
         contents.append("STARTING FRAME (the video begins from this exact image):")
         contents += _image_parts([(first_frame, "image/png")])
@@ -516,10 +666,28 @@ def _optimize_video_prompt(
 
 _VEO_POLL_TIMEOUT = 600  # giây
 _VEO_POLL_INTERVAL = 10
+# Quota Veo Vertex (long_running...requests_per_base_model) thường rất thấp ở project free-trial
+# → giới hạn số Veo chạy ĐỒNG THỜI (mặc định 1 = serialize). Override bằng env VEO_MAX_CONCURRENCY.
+import threading as _threading
+_VEO_SEMAPHORE = _threading.Semaphore(max(1, int(os.getenv("VEO_MAX_CONCURRENCY", "1") or "1")))
+_VEO_RETRIES = 4            # số lần thử lại khi 429 (quota) hoặc lỗi nội bộ tạm thời (code 13/14)
+_VEO_BACKOFF = 30           # giây chờ ban đầu giữa các lần thử (tăng dần)
 VEO_MAX_DURATION = 8        # Veo 3.1 tối đa 8s/clip → ghép nhiều clip để video dài hơn
 VEO_RESOLUTION_DEFAULT = "1080p"  # chất lượng cao như Gemini app (override bằng env VEO_RESOLUTION)
-DEFAULT_VIDEO_CLIPS = 3     # số clip mặc định; mỗi clip 1 cảnh/góc quay riêng (~8s)
-MAX_VIDEO_CLIPS = 6         # tối đa 6 cảnh để video có nhiều góc/chuyển cảnh (mỗi cảnh tốn credit)
+DEFAULT_VIDEO_CLIPS = 3     # số clip mặc định; mỗi clip = 1 lần render Veo (~8s) = chi phí token chính
+MAX_VIDEO_CLIPS = 6         # tối đa 6 lần render Veo (mỗi lần tốn credit)
+DEFAULT_BEATS_PER_CLIP = 3  # số cảnh/clip; mỗi cảnh = 1 sub-clip 4s NEO panel riêng → clip dài = beats × 4s
+MAX_BEATS_PER_CLIP = 8      # tối đa 8 cảnh/clip (mỗi cảnh 4s = 1 lần render Veo → 8 cảnh = 32s, 8 render)
+VEO_RENDER_DURATIONS = (4, 6, 8)  # các mốc thời lượng Veo 3.1 chấp nhận (render tối thiểu 4s)
+SCENE_SECONDS = 4          # giây mỗi cảnh = đúng mốc render Veo nhỏ nhất → DÙNG TRỌN, không cắt bỏ (0 phí)
+
+
+def _veo_render_seconds(target: float) -> int:
+    """Mốc thời lượng Veo nhỏ nhất >= target (Veo render tối thiểu 4s → cảnh ngắn hơn phải cắt lại)."""
+    for d in VEO_RENDER_DURATIONS:
+        if d >= target:
+            return d
+    return VEO_MAX_DURATION
 
 
 def generate_video_veo(
@@ -528,9 +696,12 @@ def generate_video_veo(
     prompt: str,
     product_images: list[tuple[bytes, str]],
     storyboard_image: bytes | None = None,
+    storyboard_context: bytes | None = None,
     aspect_ratio: str = "9:16",
     model: str | None = None,
     optimize_prompt: bool = True,
+    beats: int = 1,
+    duration_seconds: int | None = None,
 ) -> bytes:
     """Tạo video bằng Veo từ prompt + ảnh sản phẩm (ASSET) + ảnh storyboard (STYLE).
 
@@ -560,8 +731,10 @@ def generate_video_veo(
         )
     extra = {"output_gcs_uri": gcs_out} if gcs_out else {}
     if is_vertex:
-        extra["duration_seconds"] = VEO_MAX_DURATION  # kéo dài hết cỡ mỗi clip (Veo 3.1 max 8s)
+        extra["duration_seconds"] = duration_seconds or VEO_MAX_DURATION  # giây Veo render (mặc định max 8s)
         extra["enhance_prompt"] = True                # bộ tự tinh chỉnh prompt của Veo (như Gemini app)
+        # Mặc định TẮT audio (video câm) → rẻ hơn (Veo tính phí audio cao hơn); bật lại bằng VEO_AUDIO=true.
+        extra["generate_audio"] = os.getenv("VEO_AUDIO", "").strip().lower() in ("1", "true", "yes")
         res = os.getenv("VEO_RESOLUTION", VEO_RESOLUTION_DEFAULT).strip()
         if res:
             extra["resolution"] = res  # 1080p cho nét như Gemini app
@@ -573,6 +746,7 @@ def generate_video_veo(
     if optimize_prompt and is_vertex:
         prompt = _optimize_video_prompt(
             client, prompt, first_frame=(first_img[0] if first_img else None),
+            storyboard_context=storyboard_context, beats=beats,
         )
 
     def _start_with_references():
@@ -602,24 +776,50 @@ def generate_video_veo(
         source = types.GenerateVideosSource(**source_kwargs)
         return client.models.generate_videos(model=model, source=source, config=config)
 
-    try:
-        operation = _start_with_references()
-    except Exception as e:
-        # Reference images không được hỗ trợ → fallback first-frame image-to-video.
-        if "reference" in str(e).lower() or "not supported" in str(e).lower() or "no-asset-refs" in str(e):
-            operation = _start_with_first_frame()
-        else:
+    def _start() -> object:
+        try:
+            return _start_with_references()
+        except Exception as e:
+            # Reference images không được hỗ trợ → fallback first-frame image-to-video.
+            if "reference" in str(e).lower() or "not supported" in str(e).lower() or "no-asset-refs" in str(e):
+                return _start_with_first_frame()
             raise
 
-    deadline = time.time() + _VEO_POLL_TIMEOUT
-    while not operation.done and time.time() < deadline:
-        time.sleep(_VEO_POLL_INTERVAL)
-        operation = client.operations.get(operation)
+    def _is_retryable(text) -> bool:
+        s = str(text)
+        low = s.lower()
+        return (
+            "429" in s or "RESOURCE_EXHAUSTED" in s or "quota" in low            # quota/rate-limit
+            or "'code': 13" in s or "INTERNAL" in s or "internal error" in low   # lỗi nội bộ Veo tạm thời
+            or "'code': 14" in s or "UNAVAILABLE" in s or "try again" in low      # quá tải/tạm thời
+        )
 
-    if not operation.done:
-        raise RuntimeError(f"Veo quá thời gian chờ ({_VEO_POLL_TIMEOUT}s).")
-    if operation.error:
-        raise RuntimeError(f"Veo lỗi: {getattr(operation.error, 'message', None) or operation.error}")
+    # Serialize Veo (quota đồng thời thấp) + retry khi 429 / lỗi nội bộ tạm thời (code 13/14).
+    with _VEO_SEMAPHORE:
+        operation = None
+        for attempt in range(_VEO_RETRIES):
+            try:
+                operation = _start()
+            except Exception as e:
+                if _is_retryable(e) and attempt < _VEO_RETRIES - 1:
+                    time.sleep(_VEO_BACKOFF * (attempt + 1))  # chờ tăng dần rồi thử lại
+                    continue
+                raise
+
+            deadline = time.time() + _VEO_POLL_TIMEOUT
+            while not operation.done and time.time() < deadline:
+                time.sleep(_VEO_POLL_INTERVAL)
+                operation = client.operations.get(operation)
+            if not operation.done:
+                raise RuntimeError(f"Veo quá thời gian chờ ({_VEO_POLL_TIMEOUT}s).")
+
+            if operation.error:
+                if _is_retryable(operation.error) and attempt < _VEO_RETRIES - 1:
+                    time.sleep(_VEO_BACKOFF * (attempt + 1))  # lỗi tạm thời → render lại
+                    continue
+                msg = getattr(operation.error, "message", None) or operation.error
+                raise RuntimeError(f"Veo lỗi: {msg}")
+            break  # thành công
 
     result = operation.result
     if not result.generated_videos:
@@ -701,95 +901,122 @@ def _stitch_videos(clips: list[bytes]) -> bytes:
             return f.read()
 
 
-def generate_review_video(
-    client: genai.Client,
-    *,
-    product_images: list[tuple[bytes, str]],
-    scene_images: list[tuple[bytes, str]] | None = None,
-    idea: str,
-    clips: int = DEFAULT_VIDEO_CLIPS,
-    aspect_ratio: str = "9:16",
-) -> bytes:
-    """Sinh video review NHIỀU CẢNH liên tục như cách Gemini app: mỗi cảnh 1 frame góc quay
-    (Nano Banana, giữ sản phẩm) → image-to-video Veo 1080p → nối lại.
-
-    Mỗi clip ~8s → tổng ≈ clips × 8s. clips tối đa MAX_VIDEO_CLIPS (tiết kiệm token).
-    """
-    from concurrent.futures import ThreadPoolExecutor
-
-    clips = max(1, min(clips, MAX_VIDEO_CLIPS))
-    product, steps = _plan_steps(
-        client, product_images=product_images, idea=idea, panels=clips,
-    )
-    if not steps:
-        steps = [f"the {product} shown and used by faceless hands in a tidy home"] * clips
-    steps = (steps + steps)[:clips]  # đủ số cảnh
-
-    # 1) Sinh 1 frame góc quay cho MỖI cảnh (giữ đúng sản phẩm, bám realism ảnh scene) — song song.
-    with ThreadPoolExecutor(max_workers=clips) as ex:
-        frames = list(ex.map(
-            lambda s: _scene_image_banana(
-                client, product_images=product_images, scene_images=scene_images,
-                subject_desc=product, scene=s,
-            ),
-            steps,
-        ))
-
-    # 2) image-to-video từ mỗi frame + prompt (như Gemini app) — song song.
-    def _clip(frame_scene: tuple[bytes, str]) -> bytes:
-        frame, scene = frame_scene
-        prompt = (
-            f"Vertical TikTok UGC product-review shot. ONE single slow, smooth action: {scene} "
+def _clip_prompt(scenes: list[str]) -> str:
+    """Prompt text cho 1 clip Veo: montage nhiều cảnh (>=2) hoặc 1 cú máy mượt (1 cảnh)."""
+    if len(scenes) >= 2:
+        beats_txt = " ".join(f"({i + 1}) {s}" for i, s in enumerate(scenes))
+        return (
+            f"Vertical TikTok UGC product-review montage — {len(scenes)} quick consecutive shots in ~8s with "
+            f"clean hard cuts between them, in order: {beats_txt} "
             "Faceless: hands/forearms only, no human face. Realistic physics — solid objects with weight, "
             "hands touch the product naturally and NEVER pass through or clip into it, no morphing or warping, "
-            "the product keeps its exact shape. Clean premium lifestyle look, soft natural daylight, calm "
-            "steady camera, minimal natural motion. No on-screen text, no logo, no watermark."
+            "the product keeps its exact shape across every cut. Clean premium lifestyle look, soft natural "
+            "daylight. No on-screen text, no logo, no watermark."
         )
-        return generate_video_veo(
-            client, prompt=prompt, product_images=[],
-            storyboard_image=frame, aspect_ratio=aspect_ratio,
-        )
+    return (
+        f"Vertical TikTok UGC product-review shot. ONE single slow, smooth action: {scenes[0]} "
+        "Faceless: hands/forearms only, no human face. Realistic physics — solid objects with weight, "
+        "hands touch the product naturally and NEVER pass through or clip into it, no morphing or warping, "
+        "the product keeps its exact shape. Clean premium lifestyle look, soft natural daylight, calm "
+        "steady camera, minimal natural motion. No on-screen text, no logo, no watermark."
+    )
 
-    with ThreadPoolExecutor(max_workers=clips) as ex:
-        clip_bytes = list(ex.map(_clip, list(zip(frames, steps))))
-    return _stitch_videos(clip_bytes)
 
+# ── Flow hợp nhất: storyboard ↔ prompt ↔ clip khớp 1-1 ──────────────────────
 
-# ── Sinh 1 output hoàn chỉnh: ảnh storyboard + prompt ───────────────────────
-
-def generate_ugc_storyboard(
+def generate_storyboard_set(
     client: genai.Client,
     *,
     product_images: list[tuple[bytes, str]],
     scene_images: list[tuple[bytes, str]],
     idea: str,
-    target_model: str,
-    panels: int = DEFAULT_PANELS,
-    variation_index: int = 1,
-    total: int = 1,
+    clips: int = DEFAULT_VIDEO_CLIPS,
+    beats_per_clip: int = DEFAULT_BEATS_PER_CLIP,
+    directions: str = "",
+    target_model: str = DEFAULT_TARGET,
     image_model: str = DEFAULT_IMAGE_MODEL,
 ) -> dict:
-    """Trả về {'image': bytes (storyboard lưới), 'prompt': str (template video UGC)}.
+    """Lên flow MỘT lần → `clips` storyboard, mỗi storyboard = 1 clip gồm `beats_per_clip` cảnh.
 
-    Dùng Nano Banana: nó nhận trực tiếp ảnh sản phẩm nên GIỮ ĐÚNG sản phẩm
-    (Imagen customization hay bịa ra sản phẩm khác — đã bỏ).
+    Sinh 1 frame SẠCH cho TỪNG cảnh (giữ sản phẩm) rồi tự GHÉP thành lưới → panel đúng số cảnh 100%
+    (Nano Banana vẽ lưới hay sai số panel) và chính các frame đó dùng làm frame mở đầu Veo (panel ↔ clip
+    khớp tuyệt đối). `directions` = yêu cầu cảnh/góc quay cụ thể của user (ưu tiên vào cả cảnh, prompt, frame).
+    Mỗi item: {'image' (lưới), 'frames' (list frame/cảnh), 'prompt', 'scenes'}.
     """
-    image_bytes = generate_storyboard_banana(
-        client,
-        product_images=product_images,
-        scene_images=scene_images,
-        idea=idea,
-        panels=panels,
-        variation_index=variation_index,
-        total=total,
-        model=image_model,
+    from concurrent.futures import ThreadPoolExecutor
+
+    clips = max(1, min(clips, MAX_VIDEO_CLIPS))
+    beats_per_clip = max(1, min(beats_per_clip, MAX_BEATS_PER_CLIP))
+    product, groups = plan_review_flow(
+        client, product_images=product_images, idea=idea,
+        clips=clips, beats_per_clip=beats_per_clip, directions=directions,
     )
-    prompt = generate_sequence_prompt(
-        client,
-        product_images=product_images,
-        idea=idea,
-        target_model=target_model,
-        variation_index=variation_index,
-        total=total,
-    )
-    return {"image": image_bytes, "prompt": prompt}
+
+    # Sinh 1 frame cho MỖI cảnh (phẳng, song song) — chính là frame Veo sẽ dùng.
+    flat = [scene for g in groups for scene in g]
+    with ThreadPoolExecutor(max_workers=min(8, len(flat) or 1)) as ex:
+        frames_flat = list(ex.map(
+            lambda s: _scene_image_banana(
+                client, product_images=product_images, scene_images=scene_images,
+                subject_desc=product, scene=s,
+            ),
+            flat,
+        ))
+
+    items: list[dict] = []
+    k = 0
+    for group in groups:
+        gframes = frames_flat[k:k + len(group)]
+        k += len(group)
+        grid = _compose_grid(gframes, cols=2 if len(gframes) > 1 else 1) if gframes else None
+        prompt = generate_sequence_prompt(
+            client, product_images=product_images, idea=idea,
+            target_model=target_model, steps=group, directions=directions,
+        )
+        items.append({"image": grid, "frames": gframes, "prompt": prompt, "scenes": group})
+    return {"product": product, "items": items}
+
+
+def generate_clip_from_storyboard(
+    client: genai.Client,
+    *,
+    product_images: list[tuple[bytes, str]],
+    scene_images: list[tuple[bytes, str]] | None = None,
+    product: str,
+    scenes: list[str],
+    frames: list[bytes] | None = None,
+    storyboard_image: bytes | None = None,
+    aspect_ratio: str = "9:16",
+) -> bytes:
+    """1 clip cho 1 storyboard: MỖI cảnh = 1 sub-clip 4s từ frame panel riêng → ghép lại.
+
+    `frames` = đúng các frame panel đã sinh ở storyboard (image-to-video bám CHÍNH ảnh bạn thấy).
+    Mỗi cảnh render 4s (mốc Veo nhỏ nhất) và DÙNG TRỌN (không cắt bỏ → 0 giây phí). Clip dài
+    = số cảnh × 4s. MỌI cảnh bám đúng sản phẩm (không để Veo tự bịa). Thiếu frame thì sinh bù.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    scenes = [s for s in (scenes or []) if s] or [
+        f"the {product} used by faceless hands in a tidy home"
+    ]
+    frames = frames or []
+    render_secs = _veo_render_seconds(SCENE_SECONDS)      # mỗi cảnh render 4s và DÙNG TRỌN (không cắt → 0 phí)
+
+    def _scene_clip(idx_scene: tuple[int, str]) -> bytes:
+        i, scene = idx_scene
+        frame = frames[i] if i < len(frames) and frames[i] else _scene_image_banana(
+            client, product_images=product_images, scene_images=scene_images,
+            subject_desc=product, scene=scene, storyboard_image=storyboard_image,
+        )
+        return generate_video_veo(
+            client, prompt=_clip_prompt([scene]), product_images=[],
+            storyboard_image=frame, aspect_ratio=aspect_ratio,
+            beats=1, duration_seconds=render_secs,
+        )
+
+    indexed = list(enumerate(scenes))
+    if len(scenes) == 1:
+        return _scene_clip(indexed[0])
+    with ThreadPoolExecutor(max_workers=len(scenes)) as ex:
+        sub_clips = list(ex.map(_scene_clip, indexed))
+    return _stitch_videos(sub_clips)
