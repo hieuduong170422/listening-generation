@@ -7,6 +7,7 @@ from google import genai
 
 from podcast_studio.auth import get_api_key as _get_api_key
 from podcast_studio.api_utils import is_hard_quota_error
+from podcast_studio import affiliate_history
 from podcast_studio.affiliate import (
     DEFAULT_IMAGE_MODEL,
     MAX_REF_IMAGES,
@@ -185,13 +186,26 @@ if st.button("🚀 Sinh storyboard + prompt", type="primary"):
                 st.session_state["_ugc_product_name"] = data["product"]
                 st.session_state["_ugc_results"] = data["items"]
                 st.session_state.pop("_ugc_final_video", None)
+                try:
+                    affiliate_history.log_storyboard(
+                        idea=idea,
+                        directions=directions,
+                        clips=_clips,
+                        beats_per_clip=_beats,
+                        product=data["product"],
+                        engine="vertex" if _vertex_enabled() else "gemini",
+                        image_model=DEFAULT_IMAGE_MODEL,
+                        items=data["items"],
+                    )
+                except Exception:
+                    pass  # log lỗi không được phá flow chính
             except Exception as e:
                 st.error(_friendly_error(e))
 
-def _make_clip(item: dict) -> bytes:
+def _make_clip(item: dict, clip_index: int | None = None) -> bytes:
     """Render 1 clip 8s cho 1 storyboard: Omni đọc ảnh + cảnh → Veo."""
     client = _get_client()
-    return generate_clip_from_storyboard(
+    video = generate_clip_from_storyboard(
         client,
         product_images=st.session_state.get("_ugc_product_imgs", []),
         scene_images=st.session_state.get("_ugc_scene_imgs", []),
@@ -200,6 +214,18 @@ def _make_clip(item: dict) -> bytes:
         frames=item.get("frames") or [],
         storyboard_image=item.get("image"),
     )
+    try:
+        affiliate_history.log_video(
+            product=st.session_state.get("_ugc_product_name", "product"),
+            engine="vertex" if _vertex_enabled() else "gemini",
+            clip_index=clip_index,
+            scenes=item.get("scenes") or [],
+            prompt=item.get("prompt") or "",
+            video_bytes=len(video or b""),
+        )
+    except Exception:
+        pass  # log lỗi không được phá flow chính
+    return video
 
 
 # ── Bước 3: Kết quả ────────────────────────────────────────────────────────
@@ -246,7 +272,7 @@ if results:
                 if do_generate:
                     try:
                         with st.spinner("⏳ Veo đang dựng clip (~2-4 PHÚT). ĐỪNG đóng/đổi tab — cứ chờ..."):
-                            item["video"] = _make_clip(item)
+                            item["video"] = _make_clip(item, clip_index=idx)
                         st.session_state.pop("_ugc_final_video", None)  # clip đổi → video nối cũ hết hiệu lực
                         st.rerun()
                     except Exception as e:
@@ -274,10 +300,21 @@ if results:
             for i, x in enumerate(results):
                 if not x.get("video"):
                     prog.progress(i / len(results), text=f"⏳ Veo dựng clip {i + 1}/{len(results)}...")
-                    x["video"] = _make_clip(x)
+                    x["video"] = _make_clip(x, clip_index=i + 1)
                 vids.append(x["video"])
             prog.progress(0.99, text="Đang nối clip...")
-            st.session_state["_ugc_final_video"] = _stitch_videos(vids)
+            final_video = _stitch_videos(vids)
+            st.session_state["_ugc_final_video"] = final_video
+            try:
+                affiliate_history.log_video(
+                    product=st.session_state.get("_ugc_product_name", "product"),
+                    engine="vertex" if _vertex_enabled() else "gemini",
+                    scenes=[s for x in results for s in (x.get("scenes") or [])],
+                    video_bytes=len(final_video or b""),
+                    final=True,
+                )
+            except Exception:
+                pass
             prog.empty()
             st.rerun()
         except Exception as e:
