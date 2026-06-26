@@ -838,7 +838,7 @@ def generate_video_veo(
     uri = getattr(video, "uri", None)
     if uri:
         if uri.startswith("gs://"):
-            return _download_gcs(uri)
+            return _download_gcs(uri, client)
         import requests
         key = os.getenv("GEMINI_API_KEY") or os.getenv("API_KEY") or ""
         sep = "&" if "?" in uri else "?"
@@ -849,8 +849,13 @@ def generate_video_veo(
     raise RuntimeError("Veo trả về video nhưng không lấy được dữ liệu.")
 
 
-def _download_gcs(gs_uri: str) -> bytes:
-    """Tải bytes 1 object từ gs://bucket/path (dùng ADC — cần google-cloud-storage)."""
+def _download_gcs(gs_uri: str, client: "genai.Client | None" = None) -> bytes:
+    """Tải bytes 1 object từ gs://bucket/path.
+
+    Lấy credential + project từ chính genai client (Vertex) để storage.Client
+    không phải rơi về ADC — quan trọng khi chạy ngoài GCP (vd Streamlit Cloud)
+    nơi KHÔNG có metadata server, chỉ có service account trong st.secrets.
+    """
     try:
         from google.cloud import storage
     except ImportError:
@@ -858,9 +863,15 @@ def _download_gcs(gs_uri: str) -> bytes:
             "Thiếu thư viện google-cloud-storage để tải video Veo từ GCS. "
             "Cài bằng: uv add google-cloud-storage"
         )
+    # google-genai giữ credential ở client._api_client._credentials (Vertex mode).
+    api = getattr(client, "_api_client", None)
+    credentials = getattr(api, "_credentials", None)
+    project = getattr(api, "project", None) or os.getenv("GOOGLE_CLOUD_PROJECT") or None
+    storage_client = storage.Client(project=project, credentials=credentials)
+
     path = gs_uri[len("gs://"):]
     bucket_name, _, blob_path = path.partition("/")
-    blob = storage.Client().bucket(bucket_name).blob(blob_path)
+    blob = storage_client.bucket(bucket_name).blob(blob_path)
     return blob.download_as_bytes()
 
 
