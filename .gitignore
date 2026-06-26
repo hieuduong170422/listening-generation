@@ -23,3 +23,4 @@ kalodata.db
 logs/
 .DS_Store
 .idea/
+gen-lang-client-*.json

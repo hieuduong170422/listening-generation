@@ -159,6 +159,7 @@ def _init_state() -> None:
         "audio_paths": {},
         "image_paths": {},
         "video_paths": {},
+        "subtitle_paths": {},
         "full_video_path": None,
         "base_slug": None,
         "cancel": False,
@@ -731,6 +732,7 @@ def _sidebar(client: genai.Client) -> dict:
             st.session_state["audio_paths"] = {}
             st.session_state["image_paths"] = {}
             st.session_state["video_paths"] = {}
+            st.session_state["subtitle_paths"] = {}
             st.session_state["cancel"] = False
             st.session_state["usage_log"] = []
             for k in list(st.session_state.keys()):
@@ -996,20 +998,67 @@ def _render_full_video_bar(outline: Outline, base_slug: str) -> None:
 
 
 def _render_part_video(part: PartBrief, base_slug: str) -> None:
-    """Khối gen ảnh + tạo video MP4 cho 1 part (hiện dưới audio player)."""
+    """Khối gen sub + gen ảnh + tạo video MP4 cho 1 part."""
     idx = part.index
     has_image = idx in st.session_state["image_paths"]
     has_video = idx in st.session_state["video_paths"]
+    has_audio = idx in st.session_state["audio_paths"]
+    has_sub = idx in st.session_state["subtitle_paths"]
 
+    # ── Subtitle section ──────────────────────────────────────────────
+    st.markdown("**📝 Subtitle (.srt)**")
+    sc1, sc2 = st.columns(2)
+    gen_sub = sc1.button(
+        "✨ Gen subtitle" if not has_sub else "🔁 Gen lại subtitle",
+        key=f"gensub_{idx}", use_container_width=True, disabled=not has_audio,
+    )
+    if has_sub:
+        srt_path = Path(st.session_state["subtitle_paths"][idx])
+        if srt_path.exists():
+            sc2.download_button(
+                "⬇️ Tải SRT",
+                data=srt_path.read_bytes(),
+                file_name=srt_path.name,
+                mime="text/plain",
+                key=f"dlsub_{idx}",
+                use_container_width=True,
+            )
+
+    if gen_sub:
+        with st.spinner(f"Đang align subtitle cho Part {idx} (Gemini Audio)…"):
+            try:
+                from podcast_studio.subtitle_gen import generate_srt
+                srt_out = HISTORY_DIR / f"{base_slug}_part{idx}.srt"
+                generate_srt(
+                    audio_path=Path(st.session_state["audio_paths"][idx]),
+                    script_text=st.session_state["scripts"][idx],
+                    output_path=srt_out,
+                )
+                st.session_state["subtitle_paths"][idx] = str(srt_out)
+                st.session_state["video_paths"].pop(idx, None)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Lỗi gen subtitle: {e}")
+
+    # ── Video section ─────────────────────────────────────────────────
     st.markdown("**🎬 Video**")
     vc1, vc2 = st.columns(2)
     gen_img = vc1.button(
         "🎨 Gen ảnh" if not has_image else "🔁 Gen lại ảnh",
         key=f"genimg_{idx}", use_container_width=True,
     )
-    build_vid = vc2.button(
-        "🎬 Tạo video", key=f"buildvid_{idx}",
+    burn_sub = vc2.toggle(
+        "Burn sub vào video",
+        value=has_sub,
+        disabled=not has_sub,
+        key=f"burnsub_{idx}",
+        help="Bật → sub hard-coded vào video (TikTok/Reels). Tắt → video không sub, dùng SRT riêng.",
+    )
+    build_vid = st.button(
+        "🎬 Tạo video" + (" (có sub)" if burn_sub else ""),
+        key=f"buildvid_{idx}",
         disabled=not has_image, use_container_width=True,
+        type="primary",
     )
 
     if gen_img:
@@ -1044,6 +1093,8 @@ def _render_part_video(part: PartBrief, base_slug: str) -> None:
                     image_path=Path(st.session_state["image_paths"][idx]),
                     audio_path=Path(st.session_state["audio_paths"][idx]),
                     out_path=video_path,
+                    subtitle_path=Path(st.session_state["subtitle_paths"][idx])
+                    if burn_sub and has_sub else None,
                 )
                 st.session_state["video_paths"][idx] = str(video_path)
                 st.session_state["full_video_path"] = None

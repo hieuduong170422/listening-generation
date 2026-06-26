@@ -22,14 +22,37 @@ def build_part_video(
     out_path: Path,
     width: int = 1920,
     height: int = 1080,
+    subtitle_path: Path | None = None,
 ) -> Path:
-    """Ghép 1 ảnh tĩnh + 1 file audio thành MP4 (ảnh hiện suốt thời lượng audio)."""
+    """Ghép 1 ảnh tĩnh + 1 file audio thành MP4 (ảnh hiện suốt thời lượng audio).
+
+    Nếu truyền ``subtitle_path`` (.srt), sub sẽ được burn-in trực tiếp vào
+    video — kiểu TikTok/YouTube short, không tắt được. Style cố định: white
+    text + black outline, bottom-center, 24pt Arial.
+    """
     _require_ffmpeg()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    vf = (
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1"
-    )
+    vf_chain = [
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+        "setsar=1",
+    ]
+    if subtitle_path is not None:
+        srt_escaped = (
+            str(Path(subtitle_path).resolve())
+            .replace("\\", "\\\\")
+            .replace(":", "\\:")
+            .replace("'", r"\'")
+        )
+        style = (
+            "Fontname=Arial,FontSize=24,"
+            "PrimaryColour=&HFFFFFF&,"
+            "OutlineColour=&H000000&,BorderStyle=1,"
+            "Outline=2,Shadow=1,"
+            "Alignment=2,MarginV=60"
+        )
+        vf_chain.append(f"subtitles='{srt_escaped}':force_style='{style}'")
+    vf = ",".join(vf_chain)
     cmd = [
         "ffmpeg", "-y",
         "-loop", "1", "-i", str(image_path),
