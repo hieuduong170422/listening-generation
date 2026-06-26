@@ -1,4 +1,5 @@
 .env
+secrets/
 tts_settings.json
 .claude/
 __pycache__/

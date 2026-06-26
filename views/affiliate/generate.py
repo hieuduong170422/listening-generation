@@ -35,6 +35,41 @@ def _vertex_enabled() -> bool:
     return os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() in ("1", "true", "yes")
 
 
+def _vertex_credentials():
+    """Service account cho Vertex (bắt buộc trên Streamlit Cloud — ở đó KHÔNG có ADC).
+
+    Thứ tự ưu tiên:
+      1. st.secrets["gcp_service_account"]  (dán nội dung JSON vào Streamlit secrets)
+      2. env GCP_SERVICE_ACCOUNT_JSON       (chuỗi JSON inline)
+      3. env GOOGLE_APPLICATION_CREDENTIALS (đường dẫn file JSON)
+      4. None → google-genai tự dùng ADC (chỉ chạy được ở local có `gcloud auth ...`)
+    """
+    import json
+
+    from google.oauth2 import service_account
+
+    _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    info = None
+    try:
+        if "gcp_service_account" in st.secrets:  # Streamlit Cloud
+            info = dict(st.secrets["gcp_service_account"])
+    except Exception:
+        pass  # st.secrets có thể chưa cấu hình → bỏ qua
+    if info is None:
+        raw = os.getenv("GCP_SERVICE_ACCOUNT_JSON", "").strip()
+        if raw:
+            info = json.loads(raw)
+    if info is not None:
+        return service_account.Credentials.from_service_account_info(info, scopes=_SCOPES)
+
+    path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if path and os.path.exists(path):
+        return service_account.Credentials.from_service_account_file(path, scopes=_SCOPES)
+
+    return None  # fallback ADC (local)
+
+
 def _get_client() -> genai.Client:
     """Vertex AI (dùng credit GCP) nếu bật GOOGLE_GENAI_USE_VERTEXAI; nếu không thì key Gemini."""
     if _vertex_enabled():
@@ -44,11 +79,16 @@ def _get_client() -> genai.Client:
             st.error("Vertex AI: thiếu GOOGLE_CLOUD_PROJECT trong .env.")
             st.stop()
         try:
-            return genai.Client(vertexai=True, project=project, location=location)
+            creds = _vertex_credentials()
+            return genai.Client(
+                vertexai=True, project=project, location=location, credentials=creds
+            )
         except Exception as e:
             st.error(
                 f"Không tạo được Vertex client: {e}\n\n"
-                "Chạy `gcloud auth application-default login` để xác thực."
+                "• Local: chạy `gcloud auth application-default login`.\n"
+                "• Streamlit Cloud: dán service account JSON vào Settings → Secrets "
+                "dưới khoá [gcp_service_account] (xem hướng dẫn)."
             )
             st.stop()
     api_key = _get_api_key()
