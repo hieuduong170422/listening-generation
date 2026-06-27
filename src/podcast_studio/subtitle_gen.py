@@ -154,7 +154,7 @@ def generate_srt(
     if not key:
         raise RuntimeError("GEMINI_API_KEY chưa set — không gọi được Gemini Audio.")
 
-    client = genai.Client(api_key=key)
+    client = genai.Client(api_key=key, vertexai=False)
 
     log.info("subtitle_gen | audio=%s lines=%d model=%s", audio_path.name, len(script_lines), model)
     uploaded = client.files.upload(file=str(audio_path))

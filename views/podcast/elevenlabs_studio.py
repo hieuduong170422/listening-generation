@@ -118,7 +118,11 @@ def _el_mark_voice_changed(speaker_idx: int) -> None:
 
 
 def _get_client():
-    """Return google-genai client. GEMINI_API_KEY required."""
+    """Return google-genai client dùng GEMINI_API_KEY (không phải Vertex AI).
+
+    Truyền vertexai=False tường minh để bypass GOOGLE_GENAI_USE_VERTEXAI env var —
+    Vertex AI yêu cầu OAuth credentials, còn studio này dùng API key thường.
+    """
     key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if not key:
         st.error(
@@ -127,7 +131,7 @@ def _get_client():
         )
         st.stop()
     try:
-        return genai.Client(api_key=key)
+        return genai.Client(api_key=key, vertexai=False)
     except Exception as e:
         st.error(f"Khởi tạo Gemini client thất bại: {e}")
         st.stop()
