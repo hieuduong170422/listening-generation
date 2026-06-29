@@ -6,8 +6,12 @@ from pathlib import Path
 import streamlit as st
 from google import genai
 
-from podcast_studio.auth import get_api_key as _get_api_key
 from podcast_studio.auth import is_admin as _is_admin
+from podcast_studio.genai_client import (
+    get_client as _get_text_client,
+    get_api_key_client as _get_media_client,
+    vertex_enabled as _vertex_enabled,
+)
 from paths import HISTORY_DIR
 from podcast_studio.image_generator import generate_part_image
 from podcast_studio.video_builder import build_part_video, concat_videos, ffmpeg_available
@@ -55,12 +59,8 @@ def _slug(text: str, max_len: int = 40) -> str:
     return text[:max_len].strip("-") or "untitled"
 
 
-def _get_client() -> genai.Client:
-    api_key = _get_api_key()
-    if not api_key:
-        st.error("Thiếu API key — nhập vào ô **🔑 API Key** ở đầu sidebar.")
-        st.stop()
-    return genai.Client(api_key=api_key)
+# Text (outline/script/topic) chạy qua Vertex AI khi bật GOOGLE_GENAI_USE_VERTEXAI →
+# _get_text_client(). TTS (Gemini TTS) + sinh ảnh vẫn dùng GEMINI_API_KEY → _get_media_client().
 
 
 def _persist_usage(action: str, topic: str, before_len: int) -> None:
@@ -174,7 +174,6 @@ def _gen_part(
 
 
 def _render_part(
-    client: genai.Client,
     outline: Outline,
     part_index: int,
     style: str,
@@ -190,8 +189,9 @@ def _render_part(
     txt_path.parent.mkdir(parents=True, exist_ok=True)
     txt_path.write_text(text, encoding="utf-8")
     before = len(st.session_state.get("usage_log") or [])
+    # TTS luôn chạy trên GEMINI_API_KEY (Vertex chỉ dùng cho sinh text).
     render_script_with_voices(
-        client, script, wav_path, voices, pace=pace,
+        _get_media_client(), script, wav_path, voices, pace=pace,
         progress_callback=progress_callback,
         usage_store=st.session_state.get("usage_log"),
     )
@@ -617,7 +617,7 @@ def _step_parts(client: genai.Client, cfg: dict) -> None:
                 progress.progress(done / total_steps, text=f"Part {part.index}: render audio...")
                 try:
                     st.session_state["audio_paths"][part.index] = _render_part(
-                        client, outline, part.index, cfg["style"], base_slug,
+                        outline, part.index, cfg["style"], base_slug,
                         cfg["host_voices"], cfg["pace"],
                     )
                     ok_count += 1
@@ -686,7 +686,7 @@ def _step_parts(client: genai.Client, cfg: dict) -> None:
                 with st.spinner(f"Render audio Part {part.index}..."):
                     try:
                         st.session_state["audio_paths"][part.index] = _render_part(
-                            client, outline, part.index, cfg["style"], base_slug,
+                            outline, part.index, cfg["style"], base_slug,
                             cfg["host_voices"], cfg["pace"],
                         )
                         st.rerun()
@@ -761,7 +761,7 @@ def _render_part_video(part: PartBrief, base_slug: str) -> None:
     if gen_img:
         with st.spinner(f"Đang vẽ ảnh Part {idx}..."):
             try:
-                client = _get_client()
+                client = _get_media_client()  # sinh ảnh giữ trên GEMINI_API_KEY
                 img_path = HISTORY_DIR / f"{base_slug}_part{idx}.png"
                 before = len(st.session_state.get("usage_log") or [])
                 generate_part_image(
@@ -1016,7 +1016,9 @@ def render() -> None:
     if user_badge:
         admin_badge = " · 🛡️ admin" if _is_admin() else ""
         st.caption(f"👤 Logged in as: **{user_badge}**{admin_badge}")
-    client = _get_client()
+    if _vertex_enabled():
+        st.caption("🟢 Sinh nội dung qua **Vertex AI** (TTS vẫn dùng GEMINI_API_KEY)")
+    client = _get_text_client()  # outline/script/topic → Vertex khi bật
     cfg = _sidebar(client)
 
     if _is_admin():

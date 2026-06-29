@@ -1,12 +1,9 @@
 """Generate Video Affiliate (UGC) — ảnh sản phẩm + scene → N ảnh storyboard nhiều bước + N prompt video."""
 
-import os
-
 import streamlit as st
-from google import genai
 
-from podcast_studio.auth import get_api_key as _get_api_key
 from podcast_studio.api_utils import is_hard_quota_error
+from podcast_studio.genai_client import get_client as _get_client, vertex_enabled as _vertex_enabled
 from podcast_studio import affiliate_history
 from podcast_studio.affiliate import (
     DEFAULT_IMAGE_MODEL,
@@ -31,71 +28,6 @@ def _friendly_error(e: Exception) -> str:
     return msg if len(msg) <= 300 else msg[:300] + "…"
 
 
-def _vertex_enabled() -> bool:
-    return os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() in ("1", "true", "yes")
-
-
-def _vertex_credentials():
-    """Service account cho Vertex (bắt buộc trên Streamlit Cloud — ở đó KHÔNG có ADC).
-
-    Thứ tự ưu tiên:
-      1. st.secrets["gcp_service_account"]  (dán nội dung JSON vào Streamlit secrets)
-      2. env GCP_SERVICE_ACCOUNT_JSON       (chuỗi JSON inline)
-      3. env GOOGLE_APPLICATION_CREDENTIALS (đường dẫn file JSON)
-      4. None → google-genai tự dùng ADC (chỉ chạy được ở local có `gcloud auth ...`)
-    """
-    import json
-
-    from google.oauth2 import service_account
-
-    _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
-
-    info = None
-    try:
-        if "gcp_service_account" in st.secrets:  # Streamlit Cloud
-            info = dict(st.secrets["gcp_service_account"])
-    except Exception:
-        pass  # st.secrets có thể chưa cấu hình → bỏ qua
-    if info is None:
-        raw = os.getenv("GCP_SERVICE_ACCOUNT_JSON", "").strip()
-        if raw:
-            info = json.loads(raw)
-    if info is not None:
-        return service_account.Credentials.from_service_account_info(info, scopes=_SCOPES)
-
-    path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-    if path and os.path.exists(path):
-        return service_account.Credentials.from_service_account_file(path, scopes=_SCOPES)
-
-    return None  # fallback ADC (local)
-
-
-def _get_client() -> genai.Client:
-    """Vertex AI (dùng credit GCP) nếu bật GOOGLE_GENAI_USE_VERTEXAI; nếu không thì key Gemini."""
-    if _vertex_enabled():
-        project = os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
-        location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1").strip() or "us-central1"
-        if not project:
-            st.error("Vertex AI: thiếu GOOGLE_CLOUD_PROJECT trong .env.")
-            st.stop()
-        try:
-            creds = _vertex_credentials()
-            return genai.Client(
-                vertexai=True, project=project, location=location, credentials=creds
-            )
-        except Exception as e:
-            st.error(
-                f"Không tạo được Vertex client: {e}\n\n"
-                "• Local: chạy `gcloud auth application-default login`.\n"
-                "• Streamlit Cloud: dán service account JSON vào Settings → Secrets "
-                "dưới khoá [gcp_service_account] (xem hướng dẫn)."
-            )
-            st.stop()
-    api_key = _get_api_key()
-    if not api_key:
-        st.error("Chưa có API key. Nhập GEMINI_API_KEY trong .env hoặc ô 🔑 API Key ở sidebar.")
-        st.stop()
-    return genai.Client(api_key=api_key)
 
 
 def _normalize_image(data: bytes, mime: str) -> tuple[bytes, str]:

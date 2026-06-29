@@ -1,5 +1,4 @@
 import json
-import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,6 +9,11 @@ from google import genai
 
 from paths import HISTORY_DIR
 from podcast_studio.auth import is_admin as _is_admin
+from podcast_studio.genai_client import (
+    get_client as _get_text_client,
+    get_api_key_client as _get_media_client,
+    vertex_enabled as _vertex_enabled,
+)
 from podcast_studio.image_generator import generate_part_image
 from podcast_studio.video_builder import build_part_video, concat_videos, ffmpeg_available
 from podcast_studio.config import (
@@ -117,24 +121,10 @@ def _el_mark_voice_changed(speaker_idx: int) -> None:
     st.session_state[f"_el_voice_changed_{speaker_idx}"] = True
 
 
-def _get_client():
-    """Return google-genai client dùng GEMINI_API_KEY (không phải Vertex AI).
-
-    Truyền vertexai=False tường minh để bypass GOOGLE_GENAI_USE_VERTEXAI env var —
-    Vertex AI yêu cầu OAuth credentials, còn studio này dùng API key thường.
-    """
-    key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if not key:
-        st.error(
-            "Chưa có `GEMINI_API_KEY` trong `.env`. "
-            "Lấy key tại https://aistudio.google.com/apikey rồi restart app."
-        )
-        st.stop()
-    try:
-        return genai.Client(api_key=key, vertexai=False)
-    except Exception as e:
-        st.error(f"Khởi tạo Gemini client thất bại: {e}")
-        st.stop()
+# Text (outline/script/topic) chạy qua Vertex AI khi bật GOOGLE_GENAI_USE_VERTEXAI →
+# _get_text_client(). Sinh ảnh vẫn dùng GEMINI_API_KEY → _get_media_client()
+# (client API-key đã set vertexai=False trong genai_client để không bị route sang Vertex).
+# (TTS ở studio này đi qua ElevenLabs, không dùng genai client.)
 
 
 def _persist_usage(action: str, topic: str, before_len: int) -> None:
@@ -456,11 +446,17 @@ def _sidebar(client: genai.Client) -> dict:
             st.session_state["_tone_for_suggest"] = TONES.get(tone, "")
 
         with st.expander("🎙️ Giọng đọc (ElevenLabs)", expanded=False):
-            try:
-                _el_all_voices = _el_fetch_voices_cached()
-            except Exception as _e:
-                st.error(f"Không load được voice list ElevenLabs: {_e}")
-                st.stop()
+            _el_all_voices: list[dict] = []
+            if not get_elevenlabs_api_key():
+                st.info(
+                    "ℹ️ Chưa có `ELEVENLABS_API_KEY` — phần chọn giọng tạm ẩn. "
+                    "Vẫn gen script/outline bình thường; thêm key khi cần **Render audio**."
+                )
+            else:
+                try:
+                    _el_all_voices = _el_fetch_voices_cached()
+                except Exception as _e:
+                    st.error(f"Không load được voice list ElevenLabs: {_e}")
 
             _el_defaults_for_model = _el_load_settings().get("elevenlabs", {})
             _el_model = st.selectbox(
@@ -532,12 +528,11 @@ def _sidebar(client: genai.Client) -> dict:
                 if _el_passes(v, _gender_filter, _tier_filter)
                 and (_model_compat_unknown or _el_voice_supports_model(v, _el_model))
             ]
-            if not _filtered:
+            if not _filtered and _el_all_voices:
                 st.warning(
                     f"Không có voice nào khớp filter + model **{_el_model}**. "
                     "Thử đổi model hoặc nới filter giới tính/tier."
                 )
-                st.stop()
 
             _filtered_ids = [v["voice_id"] for v in _filtered]
             _voice_label_map = {v["voice_id"]: _el_fmt_voice(v) for v in _filtered}
@@ -562,17 +557,21 @@ def _sidebar(client: genai.Client) -> dict:
                     )
                     host_names.append(name)
                 with c2:
-                    voice = st.selectbox(
-                        f"Voice {i + 1}",
-                        _filtered_ids,
-                        format_func=lambda vid: _voice_label_map.get(vid, vid),
-                        index=0,
-                        key=f"host_voice_{i}",
-                        on_change=_el_mark_voice_changed,
-                        args=(i,),
-                    )
+                    if _filtered_ids:
+                        voice = st.selectbox(
+                            f"Voice {i + 1}",
+                            _filtered_ids,
+                            format_func=lambda vid: _voice_label_map.get(vid, vid),
+                            index=0,
+                            key=f"host_voice_{i}",
+                            on_change=_el_mark_voice_changed,
+                            args=(i,),
+                        )
+                    else:
+                        voice = ""
+                        st.caption("— (cần `ELEVENLABS_API_KEY` để chọn giọng)")
                     host_voices.append(voice)
-                _preview_url = _voice_preview_map.get(voice, "")
+                _preview_url = _voice_preview_map.get(voice, "") if voice else ""
                 if _preview_url:
                     _jc = st.session_state.pop(f"_el_voice_changed_{i}", False)
                     _autoplay = "autoplay" if _jc else ""
@@ -1068,7 +1067,7 @@ def _render_part_video(part: PartBrief, base_slug: str) -> None:
     if gen_img:
         with st.spinner(f"Đang vẽ ảnh Part {idx}..."):
             try:
-                client = _get_client()
+                client = _get_media_client()  # sinh ảnh giữ trên GEMINI_API_KEY
                 img_path = HISTORY_DIR / f"{base_slug}_part{idx}.png"
                 before = len(st.session_state.get("usage_log") or [])
                 generate_part_image(
@@ -1321,17 +1320,22 @@ def _render_stats() -> None:
 def render() -> None:
     _init_state()
     st.title("🎧 ElevenLabs Podcast Builder — Long-form")
-    st.caption("**Text gen** dùng Gemini · **Audio TTS** dùng ElevenLabs.")
+    text_engine = "Vertex AI" if _vertex_enabled() else "Gemini"
+    st.caption(f"**Text gen** dùng {text_engine} · **Audio TTS** dùng ElevenLabs.")
 
+    # Không chặn cả trang: gen script (text) chỉ cần Vertex/Gemini, chưa cần ElevenLabs.
+    # Key ElevenLabs chỉ cần khi bấm "Render audio" — lúc đó _render_part sẽ báo lỗi rõ ràng.
     if not get_elevenlabs_api_key():
-        st.error("Chưa có `ELEVENLABS_API_KEY` trong `.env`. Thêm key rồi restart app.")
-        st.stop()
+        st.warning(
+            "⚠️ Chưa có `ELEVENLABS_API_KEY` — vẫn gen được **script/outline**, "
+            "nhưng bước **Render audio** sẽ cần key. Thêm key vào `.env` rồi restart app khi cần đọc giọng."
+        )
 
     user_badge = st.session_state.get("username", "")
     if user_badge:
         admin_badge = " · 🛡️ admin" if _is_admin() else ""
         st.caption(f"👤 Logged in as: **{user_badge}**{admin_badge}")
-    client = _get_client()
+    client = _get_text_client()  # outline/script/topic → Vertex khi bật
     cfg = _sidebar(client)
 
     if _is_admin():
