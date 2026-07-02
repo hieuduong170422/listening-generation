@@ -65,6 +65,13 @@ def _slug(text: str, max_len: int = 40) -> str:
     return text[:max_len].strip("-") or "untitled"
 
 
+def _whisper_lang(lang_code: str | None) -> str | None:
+    """Map mã ngôn ngữ trong config → mã Whisper (Whisper không có 'zh_tw')."""
+    if not lang_code:
+        return None
+    return {"zh_tw": "zh"}.get(lang_code, lang_code)
+
+
 # ── ElevenLabs voice picker helpers ─────────────────────────────────────────
 _EL_TIER_BY_USECASE = {
     "informative_educational": 3,
@@ -164,6 +171,7 @@ def _init_state() -> None:
         "image_paths": {},
         "video_paths": {},
         "subtitle_paths": {},
+        "words_paths": {},
         "full_video_path": None,
         "base_slug": None,
         "cancel": False,
@@ -737,6 +745,7 @@ def _sidebar(client: genai.Client) -> dict:
             st.session_state["image_paths"] = {}
             st.session_state["video_paths"] = {}
             st.session_state["subtitle_paths"] = {}
+            st.session_state["words_paths"] = {}
             st.session_state["cancel"] = False
             st.session_state["usage_log"] = []
             for k in list(st.session_state.keys()):
@@ -828,6 +837,8 @@ def _step_parts(client: genai.Client, cfg: dict) -> None:
 
     st.header("Step 2 — Scripts & Audio per Part")
     base_slug = st.session_state["base_slug"]
+    # Lưu lại để _render_part_video truyền cho Whisper (nếu chọn gen sub local).
+    st.session_state["_podcast_language"] = cfg.get("language", DEFAULT_LANGUAGE)
     total = len(outline.parts)
     n_scripts = len(st.session_state["scripts"])
     n_audios = len(st.session_state["audio_paths"])
@@ -1011,6 +1022,18 @@ def _render_part_video(part: PartBrief, base_slug: str) -> None:
 
     # ── Subtitle section ──────────────────────────────────────────────
     st.markdown("**📝 Subtitle (.srt)**")
+    method = st.radio(
+        "Cách gen sub",
+        options=["gemini", "whisper"],
+        format_func=lambda m: (
+            "Gemini — align theo script (chính xác từng chữ)"
+            if m == "gemini"
+            else "Whisper — nhận diện local, miễn phí (+ word-level .words.json)"
+        ),
+        key=f"submethod_{idx}",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
     sc1, sc2 = st.columns(2)
     gen_sub = sc1.button(
         "✨ Gen subtitle" if not has_sub else "🔁 Gen lại subtitle",
@@ -1027,22 +1050,53 @@ def _render_part_video(part: PartBrief, base_slug: str) -> None:
                 key=f"dlsub_{idx}",
                 use_container_width=True,
             )
+    words_path = st.session_state["words_paths"].get(idx)
+    if words_path and Path(words_path).exists():
+        st.download_button(
+            "⬇️ Tải word-level (.words.json)",
+            data=Path(words_path).read_bytes(),
+            file_name=Path(words_path).name,
+            mime="application/json",
+            key=f"dlwords_{idx}",
+            use_container_width=True,
+        )
 
     if gen_sub:
-        with st.spinner(f"Đang align subtitle cho Part {idx} (Gemini Audio)…"):
-            try:
-                from podcast_studio.subtitle_gen import generate_srt
-                srt_out = HISTORY_DIR / f"{base_slug}_part{idx}.srt"
-                generate_srt(
-                    audio_path=Path(st.session_state["audio_paths"][idx]),
-                    script_text=st.session_state["scripts"][idx],
-                    output_path=srt_out,
-                )
-                st.session_state["subtitle_paths"][idx] = str(srt_out)
-                st.session_state["video_paths"].pop(idx, None)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Lỗi gen subtitle: {e}")
+        srt_out = HISTORY_DIR / f"{base_slug}_part{idx}.srt"
+        if method == "whisper":
+            with st.spinner(f"Đang nhận diện subtitle cho Part {idx} (Whisper local)…"):
+                try:
+                    from podcast_studio.whisper_transcribe import (
+                        transcribe, transcript_to_srt, write_json_outputs,
+                    )
+                    lang = _whisper_lang(st.session_state.get("_podcast_language"))
+                    transcript = transcribe(
+                        Path(st.session_state["audio_paths"][idx]),
+                        language=lang,
+                    )
+                    srt_out.write_text(transcript_to_srt(transcript), encoding="utf-8")
+                    outs = write_json_outputs(transcript, srt_out.with_suffix(""))
+                    st.session_state["subtitle_paths"][idx] = str(srt_out)
+                    st.session_state["words_paths"][idx] = str(outs["words"])
+                    st.session_state["video_paths"].pop(idx, None)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Lỗi gen subtitle (Whisper): {e}")
+        else:
+            with st.spinner(f"Đang align subtitle cho Part {idx} (Gemini Audio)…"):
+                try:
+                    from podcast_studio.subtitle_gen import generate_srt
+                    generate_srt(
+                        audio_path=Path(st.session_state["audio_paths"][idx]),
+                        script_text=st.session_state["scripts"][idx],
+                        output_path=srt_out,
+                    )
+                    st.session_state["subtitle_paths"][idx] = str(srt_out)
+                    st.session_state["words_paths"].pop(idx, None)
+                    st.session_state["video_paths"].pop(idx, None)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Lỗi gen subtitle: {e}")
 
     # ── Video section ─────────────────────────────────────────────────
     st.markdown("**🎬 Video**")
