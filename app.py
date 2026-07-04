@@ -67,6 +67,11 @@ pages = {
     ],
 }
 
+if is_admin():
+    pages["🛡️ Admin"] = [
+        st.Page("views/admin/dashboard.py", title="Admin Dashboard", icon="🛡️", url_path="admin"),
+    ]
+
 # expanded=True: luôn mở hết, không thu gọn nhóm / không "View X more".
 pg = st.navigation(pages, expanded=True)
 pg.run()
