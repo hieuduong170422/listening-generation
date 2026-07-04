@@ -68,6 +68,12 @@ def is_admin() -> bool:
     return (st.session_state.get("username", "") or "").lower() in admins
 
 
+def _allowed_users() -> set[str]:
+    """Tập username được phép đăng nhập (lowercase). Đọc từ ALLOWED_USERS secret/env."""
+    raw = read_secret("ALLOWED_USERS")
+    return {u.strip().lower() for u in raw.split(",") if u.strip()}
+
+
 def check_auth() -> bool:
     expected = read_secret("APP_PASSWORD")
     if not expected:
@@ -79,11 +85,16 @@ def check_auth() -> bool:
 
     st.title("🔐 Audivy Studio")
     st.caption("Nhập tên + password để truy cập.")
-    username = st.text_input("Tên (để track usage)", key="_login_user", value="")
+    username = st.text_input("Tên", key="_login_user", value="")
     pwd = st.text_input("Password", type="password", key="_login_pwd")
     if st.button("Đăng nhập", type="primary"):
-        if pwd == expected:
-            clean = (username or "").strip() or "anonymous"
+        clean = (username or "").strip().lower()
+        allowed = _allowed_users()
+        if allowed and clean not in allowed:
+            st.error("Tên tài khoản không hợp lệ.")
+        elif pwd != expected:
+            st.error("Sai password.")
+        else:
             st.session_state["_authed"] = True
             st.session_state["username"] = clean
             try:
@@ -95,6 +106,4 @@ def check_auth() -> bool:
             except Exception:
                 pass
             st.rerun()
-        else:
-            st.error("Sai password.")
     return False
