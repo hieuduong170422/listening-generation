@@ -13,6 +13,7 @@ from kalodata.client import (
     SORT_TYPES,
     fetch_all_products,
 )
+from kalodata.store import enrich_snapshot_media
 from kalodata.store import (
     compute_trending,
     delete_snapshot,
@@ -168,6 +169,11 @@ with tab_fetch:
         except ValueError:
             st.error("Category IDs phải là số nguyên cách nhau dấu phẩy.")
             cate_ids = []
+        fetch_media = st.checkbox(
+            "🖼️ Tải ảnh sản phẩm (chậm hơn — 1 request/product)",
+            value=True,
+            help="Gọi thêm /getImages cho từng sản phẩm. Tắt để fetch nhanh, bật để home page có ảnh.",
+        )
 
     if st.button("🚀 Fetch & Save Snapshot", type="primary", use_container_width=True):
         progress = st.progress(0.0, "Đang fetch trang 1…")
@@ -214,6 +220,15 @@ with tab_fetch:
             st.warning("Fetch xong nhưng không có row nào.")
             st.stop()
 
+        media_progress = st.progress(0.0, "Đang lưu snapshot…") if fetch_media else None
+
+        def _media_cb(done: int, total_items: int, name: str = ""):
+            if media_progress:
+                media_progress.progress(
+                    min(1.0, done / max(total_items, 1)),
+                    f"Đang tải ảnh {done}/{total_items}…",
+                )
+
         snapshot_id = save_snapshot(
             country=country,
             start_date=str(start_d),
@@ -222,8 +237,12 @@ with tab_fetch:
             sort_type=sort_type,
             rows=rows,
             notes=notes,
+            fetch_media=fetch_media,
+            progress_callback=_media_cb if fetch_media else None,
         )
         progress.empty()
+        if media_progress:
+            media_progress.empty()
         st.success(
             f"✅ Saved snapshot #{snapshot_id} — {len(rows)} products "
             f"(server total: {total if total is not None else '?'})"
@@ -263,11 +282,29 @@ with tab_browse:
         key="browse_pick",
     )
 
-    bc1, bc2 = st.columns([3, 1])
+    bc1, bc2, bc3 = st.columns([2, 1, 1])
     with bc2:
-        if st.button("🗑️ Xóa snapshot này", type="secondary"):
+        enrich_btn = st.button("🖼️ Tải ảnh", type="secondary", use_container_width=True,
+                               help="Fetch ảnh cho tất cả sản phẩm trong snapshot này.")
+    with bc3:
+        if st.button("🗑️ Xóa snapshot này", type="secondary", use_container_width=True):
             delete_snapshot(pick)
             st.rerun()
+
+    if enrich_btn:
+        enrich_prog = st.progress(0.0, "Đang fetch ảnh…")
+
+        def _enrich_cb(done: int, total_items: int, pid: str = ""):
+            enrich_prog.progress(
+                min(1.0, done / max(total_items, 1)),
+                f"Đang fetch ảnh {done}/{total_items}…",
+            )
+
+        with st.spinner("Đang tải ảnh cho từng sản phẩm…"):
+            updated = enrich_snapshot_media(pick, progress_callback=_enrich_cb)
+        enrich_prog.empty()
+        st.success(f"✅ Đã cập nhật ảnh cho {updated} sản phẩm trong snapshot #{pick}.")
+        st.rerun()
 
     snap_obj = get_snapshot(pick)
     rows = get_snapshot_rows(pick)

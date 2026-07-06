@@ -1,6 +1,9 @@
 """Trang chủ — workspace landing + bảng trending TikTok Shop products."""
 from __future__ import annotations
 
+import base64
+
+import requests
 import streamlit as st
 
 from kalodata.store import (
@@ -27,6 +30,22 @@ def get_snapshot(snapshot_id: int):
 @st.cache_data(ttl=300)
 def get_snapshot_rows(snapshot_id: int):
     return _get_snapshot_rows(snapshot_id)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _proxy_image(url: str) -> str:
+    """Download image server-side → base64 data URI (tránh CDN hotlink block)."""
+    try:
+        resp = requests.get(url, timeout=8, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; Streamlit/1.0)",
+        })
+        if resp.status_code == 200:
+            mime = resp.headers.get("content-type", "image/png").split(";")[0]
+            b64 = base64.b64encode(resp.content).decode()
+            return f"data:{mime};base64,{b64}"
+    except Exception:
+        pass
+    return ""
 
 # ── Custom CSS ─────────────────────────────────────────────────────────────
 _CSS = """
@@ -205,8 +224,10 @@ snap_id = get_latest_snapshot_id(country=country)
 if not snap_id:
     st.info(
         f"Chưa có snapshot cho **{country}**. "
-        "Vào tab **📊 Kalodata → Daily Auto-Fetch → ▶️ Run Now**."
+        "Vào **Kalodata → Product Explorer → tab 🔄 Fetch & Save** để fetch lần đầu."
     )
+    if st.button("📊 Vào Kalodata Fetch ngay →", type="primary"):
+        st.switch_page("views/kalodata/products.py")
     st.stop()
 
 snap = get_snapshot(snap_id)
@@ -261,8 +282,9 @@ def _show_images_dialog(name: str, images: list[str], pid: str | None) -> None:
         st.caption(f"ID: `{pid}`  ·  {len(images)} ảnh")
     st.divider()
     for url in images:
+        src = _proxy_image(url) or url
         st.markdown(
-            f'<img src="{url}" referrerpolicy="no-referrer" '
+            f'<img src="{src}" '
             'style="width:100%;border-radius:8px;margin-bottom:12px"/>',
             unsafe_allow_html=True,
         )
@@ -284,9 +306,10 @@ for chunk_start in range(0, len(rows), PER_ROW):
             creators = row.get("creator_num") or 0
             commission = row.get("commission_pct") or 0
 
+            thumb_src = _proxy_image(images[0]) if images else ""
             img_html = (
-                f'<img src="{images[0]}" referrerpolicy="no-referrer"/>'
-                if images
+                f'<img src="{thumb_src}"/>'
+                if thumb_src
                 else '<div style="display:flex;align-items:center;justify-content:center;'
                      'height:100%;color:#555;font-size:2rem">📦</div>'
             )
