@@ -261,34 +261,46 @@ def main():
 
     with col1:
         if st.button("🚀 Tạo Podcast", use_container_width=True, type="primary"):
-            if not all(cfg["voice_ids"]):
-                st.error("⚠️ Chưa chọn đủ voice cho tất cả speaker.")
-                return
-
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_slug = f"{_slug(cfg['topic'])}_{timestamp}"
             st.session_state["base_slug"] = base_slug
 
+            # Filter out empty voice_ids; use defaults if not fully specified
+            voice_ids = [v for v in cfg["voice_ids"] if v]
+            if not voice_ids:
+                # Use default empty list (will use ElevenLabs defaults)
+                voice_ids = cfg["voice_ids"]
+
             try:
-                with st.spinner("🎙️ Đang tạo podcast... (bước này tốn credit)"):
-                    result = run_unified_podcast(
-                        client=client,
-                        topic=cfg["topic"],
-                        style_key=cfg["style"],
-                        speaker1="Speaker1",
-                        speaker2="Speaker2",
-                        num_parts=cfg["num_parts"],
-                        minutes_per_part=cfg["minutes_per_part"],
-                        output_dir=HISTORY_DIR,
-                        base_slug=base_slug,
-                        generate_subtitles=cfg["generate_subs"],
-                        audience_level=cfg["audience_level"],
-                        tone=cfg["tone"],
-                        continuous=cfg["continuous"],
-                        show_name=cfg["show_name"],
-                        channel_name=cfg["channel_name"],
-                        num_speakers=cfg["num_speakers"],
-                    )
+                # Create container for progress
+                progress_container = st.container()
+
+                with progress_container:
+                    with st.status("🎙️ Đang tạo podcast...", expanded=True) as status:
+                        st.write("📍 Bước 1/3: Generating outline...")
+
+                        result = run_unified_podcast(
+                            client=client,
+                            topic=cfg["topic"],
+                            style_key=cfg["style"],
+                            speaker1="Speaker1",
+                            speaker2="Speaker2",
+                            num_parts=cfg["num_parts"],
+                            minutes_per_part=cfg["minutes_per_part"],
+                            output_dir=HISTORY_DIR,
+                            base_slug=base_slug,
+                            generate_subtitles=cfg["generate_subs"],
+                            audience_level=cfg["audience_level"],
+                            tone=cfg["tone"],
+                            continuous=cfg["continuous"],
+                            show_name=cfg["show_name"],
+                            channel_name=cfg["channel_name"],
+                            num_speakers=cfg["num_speakers"],
+                            voice_ids=voice_ids if voice_ids else None,
+                            progress_callback=lambda stage, msg: st.write(f"📍 {stage}: {msg}") if msg else None,
+                        )
+
+                        status.update(label="✅ Hoàn thành!", state="complete")
 
                 st.success(f"✅ Tạo thành công! {len(result.parts)} part(s)")
                 if result.has_subtitles:

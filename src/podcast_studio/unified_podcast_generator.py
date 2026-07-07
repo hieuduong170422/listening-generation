@@ -52,6 +52,7 @@ def run_unified_podcast(
     show_name: str = "",
     channel_name: str = "",
     num_speakers: int = 2,
+    voice_ids: list[str] | None = None,
     progress_callback=None,
 ) -> UnifiedPodcastResult:
     """Tạo podcast hoàn chỉnh: script → audio → subtitle (tuỳ chọn).
@@ -73,6 +74,7 @@ def run_unified_podcast(
         continuous: Có continuity giữa các part không?
         show_name, channel_name: Branding metadata
         num_speakers: Số speaker (1 hoặc 2, dùng cho ElevenLabs)
+        voice_ids: List voice ID của ElevenLabs cho mỗi speaker (nếu None dùng config defaults)
         progress_callback: fn(stage, message) để tracking progress
 
     Returns:
@@ -114,7 +116,11 @@ def run_unified_podcast(
 
     # Load ElevenLabs config once (dùng chung cho tất cả part)
     el_config = get_elevenlabs_config()
-    el_voice_ids = el_config.get("voices", ["", ""])[:num_speakers]
+    # Use provided voice_ids if given, otherwise fall back to config defaults
+    if voice_ids:
+        el_voice_ids = voice_ids[:num_speakers]
+    else:
+        el_voice_ids = el_config.get("voices", ["", ""])[:num_speakers]
 
     for part in outline.parts:
         previous_titles_snapshot = tuple(previous_titles)
