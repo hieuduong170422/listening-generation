@@ -310,78 +310,143 @@ def main():
 
     base_slug = st.session_state["base_slug"]
 
+    # Bulk script generation button
+    col_gen_all, col_progress = st.columns([1, 3])
+    with col_gen_all:
+        if st.button("🚀 Generate All Scripts", use_container_width=True):
+            progress_bar = st.progress(0)
+            progress_text = st.empty()
+
+            for idx, part in enumerate(outline.parts):
+                progress_text.text(f"Generating Part {part.index}...")
+
+                try:
+                    prev_titles = tuple(p.title for p in outline.parts[: part.index - 1])
+                    prev_tail = ()
+                    if part.index > 1:
+                        prev_text = st.session_state["scripts"].get(part.index - 1)
+                        if prev_text:
+                            lines = prev_text.strip().split("\n")
+                            prev_tail = tuple(l for l in lines[-6:] if l.strip())
+
+                    script = generate_part_script(
+                        client=client,
+                        topic=cfg["topic"],
+                        style_key=cfg["style"],
+                        part_index=part.index,
+                        total_parts=cfg["num_parts"],
+                        target_minutes=cfg["minutes_per_part"],
+                        part_title=part.title,
+                        part_summary=part.summary,
+                        key_points=part.key_points,
+                        previous_part_titles=prev_titles,
+                        previous_tail_lines=prev_tail,
+                        audience_level=cfg["audience_level"],
+                        tone=cfg["tone"],
+                        continuous=cfg["continuous"],
+                        show_name=cfg["show_name"],
+                        channel_name=cfg["channel_name"],
+                    )
+                    st.session_state["scripts"][part.index] = script.to_readable()
+
+                    # Save transcript
+                    txt_path = HISTORY_DIR / f"{base_slug}_part{part.index}.txt"
+                    txt_path.parent.mkdir(parents=True, exist_ok=True)
+                    txt_path.write_text(
+                        f"Topic: {cfg['topic']}\n"
+                        f"Part: {part.index}/{cfg['num_parts']} — {part.title}\n"
+                        f"Summary: {part.summary}\n\n"
+                        + script.to_readable(),
+                        encoding="utf-8",
+                    )
+                except Exception as e:
+                    st.error(f"Error Part {part.index}: {e}")
+                    break
+
+                progress_bar.progress((idx + 1) / len(outline.parts))
+
+            st.success(f"✅ Generated {len(st.session_state['scripts'])} scripts!")
+            st.rerun()
+
+    with col_progress:
+        scripts_done = len(st.session_state["scripts"])
+        st.metric("Scripts Ready", f"{scripts_done}/{cfg['num_parts']}")
+
+    st.divider()
+
     for part in outline.parts:
         with st.expander(
             f"Part {part.index}: {part.title}",
-            expanded=False,
+            expanded=True,
         ):
+            # Show script (always visible if generated)
+            if part.index in st.session_state["scripts"]:
+                st.success("✅ Script generated")
+                st.text_area(
+                    f"Script Part {part.index}",
+                    value=st.session_state["scripts"][part.index],
+                    height=200,
+                    disabled=True,
+                    key=f"view_script_{part.index}",
+                )
+            else:
+                st.info("⏳ Script not generated yet. Use button below or 'Generate All Scripts'")
+
             col1, col2, col3 = st.columns(3)
 
-            # Script Status
+            # Script Button (if not generated)
             with col1:
-                if part.index in st.session_state["scripts"]:
-                    st.success("✅ Script generated")
-                    if st.checkbox(f"View script Part {part.index}"):
-                        st.text_area(
-                            f"Script Part {part.index}",
-                            value=st.session_state["scripts"][part.index],
-                            height=150,
-                            disabled=True,
-                            key=f"view_script_{part.index}",
-                        )
-                else:
-                    st.info("Script not generated yet")
+                if part.index not in st.session_state["scripts"]:
+                    if st.button(f"Generate Script", key=f"btn_script_{part.index}", use_container_width=True):
+                        with st.spinner(f"⏳ Generating script for Part {part.index}..."):
+                            try:
+                                prev_titles = tuple(
+                                    p.title for p in outline.parts[: part.index - 1]
+                                )
+                                prev_tail = ()
+                                if part.index > 1:
+                                    prev_text = st.session_state["scripts"].get(part.index - 1)
+                                    if prev_text:
+                                        lines = prev_text.strip().split("\n")
+                                        prev_tail = tuple(
+                                            l for l in lines[-6:] if l.strip()
+                                        )
 
-                if st.button(f"Generate Script", key=f"btn_script_{part.index}"):
-                    with st.spinner(f"⏳ Generating script for Part {part.index}..."):
-                        try:
-                            prev_titles = tuple(
-                                p.title for p in outline.parts[: part.index - 1]
-                            )
-                            prev_tail = ()
-                            if part.index > 1:
-                                prev_text = st.session_state["scripts"].get(part.index - 1)
-                                if prev_text:
-                                    lines = prev_text.strip().split("\n")
-                                    prev_tail = tuple(
-                                        l for l in lines[-6:] if l.strip()
-                                    )
+                                script = generate_part_script(
+                                    client=client,
+                                    topic=cfg["topic"],
+                                    style_key=cfg["style"],
+                                    part_index=part.index,
+                                    total_parts=cfg["num_parts"],
+                                    target_minutes=cfg["minutes_per_part"],
+                                    part_title=part.title,
+                                    part_summary=part.summary,
+                                    key_points=part.key_points,
+                                    previous_part_titles=prev_titles,
+                                    previous_tail_lines=prev_tail,
+                                    audience_level=cfg["audience_level"],
+                                    tone=cfg["tone"],
+                                    continuous=cfg["continuous"],
+                                    show_name=cfg["show_name"],
+                                    channel_name=cfg["channel_name"],
+                                )
+                                st.session_state["scripts"][part.index] = script.to_readable()
 
-                            script = generate_part_script(
-                                client=client,
-                                topic=cfg["topic"],
-                                style_key=cfg["style"],
-                                part_index=part.index,
-                                total_parts=cfg["num_parts"],
-                                target_minutes=cfg["minutes_per_part"],
-                                part_title=part.title,
-                                part_summary=part.summary,
-                                key_points=part.key_points,
-                                previous_part_titles=prev_titles,
-                                previous_tail_lines=prev_tail,
-                                audience_level=cfg["audience_level"],
-                                tone=cfg["tone"],
-                                continuous=cfg["continuous"],
-                                show_name=cfg["show_name"],
-                                channel_name=cfg["channel_name"],
-                            )
-                            st.session_state["scripts"][part.index] = script.to_readable()
+                                # Save transcript
+                                txt_path = HISTORY_DIR / f"{base_slug}_part{part.index}.txt"
+                                txt_path.parent.mkdir(parents=True, exist_ok=True)
+                                txt_path.write_text(
+                                    f"Topic: {cfg['topic']}\n"
+                                    f"Part: {part.index}/{cfg['num_parts']} — {part.title}\n"
+                                    f"Summary: {part.summary}\n\n"
+                                    + script.to_readable(),
+                                    encoding="utf-8",
+                                )
 
-                            # Save transcript
-                            txt_path = HISTORY_DIR / f"{base_slug}_part{part.index}.txt"
-                            txt_path.parent.mkdir(parents=True, exist_ok=True)
-                            txt_path.write_text(
-                                f"Topic: {cfg['topic']}\n"
-                                f"Part: {part.index}/{cfg['num_parts']} — {part.title}\n"
-                                f"Summary: {part.summary}\n\n"
-                                + script.to_readable(),
-                                encoding="utf-8",
-                            )
-
-                            st.success(f"✅ Script generated! Saved to {txt_path.name}")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Error: {e}")
+                                st.success(f"✅ Script saved!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Error: {e}")
 
             # Audio Status
             with col2:
@@ -390,13 +455,14 @@ def main():
                     wav_path = st.session_state["audio_paths"][part.index]
                     st.caption(f"📁 {Path(wav_path).name}")
                 else:
-                    st.info("Audio not generated yet")
+                    st.info("⏳ Audio not generated")
 
                 audio_disabled = part.index not in st.session_state["scripts"]
                 if st.button(
                     f"Render Audio",
                     key=f"btn_audio_{part.index}",
                     disabled=audio_disabled,
+                    use_container_width=True,
                 ):
                     with st.spinner(f"⏳ Rendering audio for Part {part.index}..."):
                         try:
@@ -407,11 +473,22 @@ def main():
                             el_config_copy = dict(el_config)
                             el_config_copy["output_format"] = "pcm_24000"
 
+                            # Get voices: use selected ones, fallback to config defaults
                             voice_ids = cfg["voice_ids"]
                             cleaned_voices = [v for v in voice_ids if v]
 
                             if not cleaned_voices:
-                                cleaned_voices = el_config_copy.get("voices", [""])
+                                # Fallback to default voices from config
+                                cleaned_voices = el_config_copy.get("voices", [""])[
+                                    :cfg["num_speakers"]
+                                ]
+                                cleaned_voices = [v for v in cleaned_voices if v]
+
+                            if not cleaned_voices:
+                                st.error(
+                                    "❌ Không có voice được chọn. Vào sidebar Settings tab để chọn voice."
+                                )
+                                return
 
                             if len(cleaned_voices) == 1:
                                 render_single_voice(script, wav_path, cleaned_voices[0], el_config_copy)
@@ -419,7 +496,7 @@ def main():
                                 render_multi_speaker(script, wav_path, cleaned_voices, el_config_copy)
 
                             st.session_state["audio_paths"][part.index] = str(wav_path)
-                            st.success(f"✅ Audio rendered! Saved to {wav_path.name}")
+                            st.success(f"✅ Audio rendered!")
                             st.rerun()
                         except ElevenLabsError as e:
                             st.error(f"❌ ElevenLabs error: {e}")
@@ -433,13 +510,14 @@ def main():
                     srt_path = st.session_state["subtitle_paths"][part.index]
                     st.caption(f"📁 {Path(srt_path).name}")
                 else:
-                    st.info("Subtitle not generated")
+                    st.info("⏳ Subtitle not generated")
 
                 sub_disabled = part.index not in st.session_state["audio_paths"]
                 if st.button(
                     f"Generate Subtitles",
                     key=f"btn_sub_{part.index}",
                     disabled=sub_disabled,
+                    use_container_width=True,
                 ):
                     with st.spinner(f"⏳ Generating subtitles for Part {part.index}..."):
                         try:
@@ -454,7 +532,7 @@ def main():
                             write_json_outputs(transcript, base_path)
 
                             st.session_state["subtitle_paths"][part.index] = str(srt_path)
-                            st.success(f"✅ Subtitles generated! {srt_path.name}")
+                            st.success(f"✅ Subtitles generated!")
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Error: {e}")
