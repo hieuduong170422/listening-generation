@@ -486,7 +486,7 @@ def main():
                 st.subheader("📝 Script")
 
                 if part.index in st.session_state["scripts"]:
-                    st.success("✅ Generated", icon="✓")
+                    st.success("✅ Generated", icon="✅")
                     script_text = st.session_state["scripts"][part.index]
 
                     # Show script text
@@ -565,7 +565,7 @@ def main():
                 st.subheader("🎵 Audio")
 
                 if part.index in st.session_state["audio_paths"]:
-                    st.success("✅ Generated", icon="✓")
+                    st.success("✅ Generated", icon="✅")
                     wav_path = st.session_state["audio_paths"][part.index]
                     st.caption(f"📁 {Path(wav_path).name}")
 
@@ -650,7 +650,7 @@ def main():
                 st.subheader("📄 Subtitles")
 
                 if part.index in st.session_state["subtitle_paths"]:
-                    st.success("✅ Generated", icon="✓")
+                    st.success("✅ Generated", icon="✅")
                     srt_path = st.session_state["subtitle_paths"][part.index]
                     st.caption(f"📁 {Path(srt_path).name}")
 
