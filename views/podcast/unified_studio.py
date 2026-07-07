@@ -374,6 +374,103 @@ def main():
         scripts_done = len(st.session_state["scripts"])
         st.metric("Scripts Ready", f"{scripts_done}/{cfg['num_parts']}")
 
+    # Bulk action buttons (appear after scripts are generated)
+    if scripts_done > 0:
+        st.divider()
+        col_bulk1, col_bulk2, col_bulk3 = st.columns(3)
+
+        with col_bulk1:
+            if st.button("🎙️ Render All Audio", use_container_width=True):
+                progress_bar = st.progress(0)
+                progress_text = st.empty()
+
+                for idx, part in enumerate(outline.parts):
+                    if part.index not in st.session_state["scripts"]:
+                        continue  # Skip parts without scripts
+
+                    progress_text.text(f"Rendering audio Part {part.index}...")
+
+                    try:
+                        script_text = st.session_state["scripts"][part.index]
+                        script = parse_script_text(cfg["topic"], cfg["style"], script_text)
+                        wav_path = HISTORY_DIR / f"{base_slug}_part{part.index}.wav"
+
+                        el_config_copy = dict(el_config)
+                        el_config_copy["output_format"] = "pcm_24000"
+
+                        voice_ids = cfg["voice_ids"]
+                        cleaned_voices = [v for v in voice_ids if v]
+
+                        if not cleaned_voices:
+                            default_voices = el_config_copy.get("voices", [""])[:cfg["num_speakers"]]
+                            cleaned_voices = [v for v in default_voices if v]
+
+                        if not cleaned_voices:
+                            try:
+                                available_voices = _el_fetch_voices_cached()
+                                if available_voices:
+                                    first_voice = available_voices[0]["voice_id"]
+                                    cleaned_voices = [first_voice] * cfg["num_speakers"]
+                            except Exception:
+                                pass
+
+                        if not cleaned_voices:
+                            st.error("❌ Không tìm được voice")
+                            break
+
+                        if len(cleaned_voices) == 1:
+                            render_single_voice(script, wav_path, cleaned_voices[0], el_config_copy)
+                        else:
+                            render_multi_speaker(script, wav_path, cleaned_voices, el_config_copy)
+
+                        st.session_state["audio_paths"][part.index] = str(wav_path)
+                    except Exception as e:
+                        st.error(f"Error Part {part.index}: {e}")
+                        break
+
+                    progress_bar.progress((idx + 1) / len(outline.parts))
+
+                st.success(f"✅ Rendered {len(st.session_state['audio_paths'])} audio files!")
+                st.rerun()
+
+        with col_bulk2:
+            audio_done = len(st.session_state["audio_paths"])
+            if audio_done > 0:
+                if st.button("📝 Generate All Subtitles", use_container_width=True):
+                    progress_bar = st.progress(0)
+                    progress_text = st.empty()
+
+                    for idx, part in enumerate(outline.parts):
+                        if part.index not in st.session_state["audio_paths"]:
+                            continue  # Skip parts without audio
+
+                        progress_text.text(f"Generating subtitles Part {part.index}...")
+
+                        try:
+                            wav_path = st.session_state["audio_paths"][part.index]
+                            srt_path = Path(wav_path).with_suffix(".srt")
+                            base_path = Path(wav_path).with_suffix("")
+
+                            transcript = transcribe(wav_path, language="vi", model_size="medium")
+                            srt_path.write_text(transcript_to_srt(transcript), encoding="utf-8")
+                            write_json_outputs(transcript, base_path)
+
+                            st.session_state["subtitle_paths"][part.index] = str(srt_path)
+                        except Exception as e:
+                            st.error(f"Error Part {part.index}: {e}")
+                            break
+
+                        progress_bar.progress((idx + 1) / len(outline.parts))
+
+                    st.success(f"✅ Generated {len(st.session_state['subtitle_paths'])} subtitle files!")
+                    st.rerun()
+
+        with col_bulk3:
+            st.metric(
+                "Status",
+                f"{len(st.session_state['audio_paths'])}/{len(st.session_state['scripts'])} audio",
+            )
+
     st.divider()
 
     for part in outline.parts:
