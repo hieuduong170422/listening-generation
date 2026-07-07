@@ -1,0 +1,20 @@
+services:
+  audivy:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8501:8080"
+    env_file:
+      - .env
+    environment:
+      - KALODATA_DB_PATH=/data/kalodata.db
+      - DATABASE_PATH=/data/templates.db
+    volumes:
+      - audivy_data:/data
+      - audivy_uploads:/app/uploads
+      - audivy_history:/app/history
+
+volumes:
+  audivy_data:
+  audivy_uploads:
+  audivy_history:

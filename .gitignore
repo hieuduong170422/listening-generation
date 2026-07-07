@@ -24,3 +24,4 @@ logs/
 .DS_Store
 .idea/
 gen-lang-client-*.json
+.env.server
