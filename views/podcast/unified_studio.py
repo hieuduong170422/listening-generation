@@ -253,8 +253,22 @@ def main():
     _init_state()
     cfg = _sidebar()
 
+    # Main area - Topic input (prominent)
+    st.markdown("### 📝 Nhập chủ đề podcast")
+    topic_input = st.text_input(
+        "Chủ đề:",
+        value=cfg["topic"],
+        placeholder="VD: Cách nói tiếng Anh giao tiếp hiệu quả...",
+        label_visibility="collapsed",
+    )
+
+    # Update topic if user changed it here
+    if topic_input and topic_input != cfg["topic"]:
+        cfg["topic"] = topic_input
+        st.session_state["topic_text"] = topic_input
+
     if not cfg["topic"]:
-        st.info("👈 Nhập chủ đề podcast ở sidebar để bắt đầu.")
+        st.info("👆 Nhập chủ đề podcast ở trên để bắt đầu")
         return
 
     client = get_client()
