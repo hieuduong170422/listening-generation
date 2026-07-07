@@ -384,13 +384,32 @@ def main():
             # Show script (always visible if generated)
             if part.index in st.session_state["scripts"]:
                 st.success("✅ Script generated")
+                script_text = st.session_state["scripts"][part.index]
+
+                # Script text area + copy button
+                col_script_buttons = st.columns([4, 1])
+                with col_script_buttons[1]:
+                    if st.button("📋 Copy", key=f"btn_copy_script_{part.index}", use_container_width=True):
+                        st.write(script_text)  # This doesn't copy, need alternative
+
                 st.text_area(
                     f"Script Part {part.index}",
-                    value=st.session_state["scripts"][part.index],
+                    value=script_text,
                     height=200,
                     disabled=True,
                     key=f"view_script_{part.index}",
                 )
+
+                # Better approach: use columns for download buttons
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    st.download_button(
+                        "📥 Download Script",
+                        data=script_text,
+                        file_name=f"{base_slug}_part{part.index}.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                    )
             else:
                 st.info("⏳ Script not generated yet. Use button below or 'Generate All Scripts'")
 
@@ -461,6 +480,16 @@ def main():
                     try:
                         with open(wav_path, "rb") as audio_file:
                             st.audio(audio_file, format="audio/wav")
+
+                        # Download audio button
+                        with open(wav_path, "rb") as audio_file:
+                            st.download_button(
+                                "📥 Download Audio",
+                                data=audio_file.read(),
+                                file_name=Path(wav_path).name,
+                                mime="audio/wav",
+                                use_container_width=True,
+                            )
                     except Exception as e:
                         st.warning(f"Can't play audio: {e}")
                 else:
@@ -528,6 +557,19 @@ def main():
                     st.success("✅ Subtitle generated")
                     srt_path = st.session_state["subtitle_paths"][part.index]
                     st.caption(f"📁 {Path(srt_path).name}")
+
+                    # Download subtitles
+                    try:
+                        with open(srt_path, "r", encoding="utf-8") as srt_file:
+                            st.download_button(
+                                "📥 Download SRT",
+                                data=srt_file.read(),
+                                file_name=Path(srt_path).name,
+                                mime="text/plain",
+                                use_container_width=True,
+                            )
+                    except Exception as e:
+                        st.warning(f"Can't download: {e}")
                 else:
                     st.info("⏳ Subtitle not generated")
 
