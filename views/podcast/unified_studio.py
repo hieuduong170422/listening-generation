@@ -1,6 +1,8 @@
-"""Unified Podcast Studio — Single UI cho toàn bộ luồng.
+"""Unified Podcast Studio — Manual step-by-step workflow.
 
-Script → Audio (ElevenLabs) → Subtitles (Whisper, tuỳ chọn)
+1. Generate Outline
+2. For each part: Generate Script → Render Audio
+3. (Optional) Generate Subtitles
 """
 import re
 from datetime import datetime
@@ -9,7 +11,7 @@ from pathlib import Path
 import streamlit as st
 from google import genai
 
-from paths import HISTORY_DIR, ROOT
+from paths import HISTORY_DIR
 from podcast_studio.auth import is_admin
 from podcast_studio.config import (
     AUDIENCE_LEVELS,
@@ -28,10 +30,20 @@ from podcast_studio.config import (
 from podcast_studio.elevenlabs_tts import (
     ElevenLabsError,
     list_voices as _el_list_voices,
+    render_multi_speaker,
+    render_single_voice,
 )
+from podcast_studio.genai_client import get_client
+from podcast_studio.multi_part import load_outline
+from podcast_studio.outline_generator import generate_outline as _generate_outline
+from podcast_studio.script_generator import generate_part_script, parse_script_text
 from podcast_studio.tts_settings import ELEVEN_MODELS, load_settings as _el_load_settings
 from podcast_studio.topic_suggester import suggest_topics
-from podcast_studio.unified_podcast_generator import run_unified_podcast
+from podcast_studio.whisper_transcribe import (
+    transcribe,
+    transcript_to_srt,
+    write_json_outputs,
+)
 
 
 def _slug(text: str, max_len: int = 40) -> str:
@@ -46,23 +58,14 @@ def _init_state() -> None:
         "topic_text": "How to communicate effectively in English",
         "base_slug": None,
         "topic_suggestions": None,
+        "outline": None,
+        "scripts": {},
+        "audio_paths": {},
+        "subtitle_paths": {},
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-
-
-def _get_client():
-    import os
-
-    key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if not key:
-        st.error(
-            "Chưa có `GEMINI_API_KEY` trong `.env`. "
-            "Lấy key tại https://aistudio.google.com/apikey rồi restart app."
-        )
-        st.stop()
-    return genai.Client(api_key=key, vertexai=False)
 
 
 @st.cache_data(ttl=300, show_spinner="Đang tải voice list ElevenLabs…")
@@ -100,7 +103,7 @@ def _sidebar() -> dict:
         suggest_col1, suggest_col2 = st.columns(2)
         with suggest_col1:
             if st.button("💡 Gợi ý chủ đề", use_container_width=True):
-                client = _get_client()
+                client = get_client()
                 with st.spinner("Đang nghĩ chủ đề..."):
                     try:
                         suggestions = suggest_topics(
@@ -143,7 +146,7 @@ def _sidebar() -> dict:
 
         with col2:
             max_parts = min(20, total_minutes)
-            default_parts = min(10, max_parts)  # Ensure default respects max
+            default_parts = min(10, max_parts)
             num_parts = int(
                 st.number_input(
                     "Số part",
@@ -175,8 +178,9 @@ def _sidebar() -> dict:
             tone_keys = list(TONES.keys())
             tone = st.selectbox("Giọng điệu", tone_keys, index=0)
             continuous = st.toggle(
-                "🔗 Hội thoại liên tục", value=True,
-                help="Bật: series là 1 cuộc thoại dài. Tắt: mỗi part độc lập."
+                "🔗 Hội thoại liên tục",
+                value=True,
+                help="Bật: series là 1 cuộc thoại dài. Tắt: mỗi part độc lập.",
             )
 
         st.session_state["_audience_for_suggest"] = audience_level
@@ -206,8 +210,10 @@ def _sidebar() -> dict:
 
         voice_ids = []
         for i in range(num_speakers):
-            voice_names = [f"{v.get('name', '')} (id: {v.get('voice_id', '')})" for v in all_voices]
-            voice_names.insert(0, "— Không chọn —")
+            voice_names = [
+                f"{v.get('name', '')} (id: {v.get('voice_id', '')})" for v in all_voices
+            ]
+            voice_names.insert(0, "— Default —")
             chosen_idx = st.selectbox(
                 f"Voice Speaker {i + 1}",
                 range(len(voice_names)),
@@ -217,10 +223,6 @@ def _sidebar() -> dict:
                 voice_ids.append(all_voices[chosen_idx - 1]["voice_id"])
             else:
                 voice_ids.append("")
-
-    with st.sidebar.expander("🎬 Tùy chọn", expanded=False):
-        generate_subs = st.checkbox("Tạo phụ đề Whisper", value=False,
-                                    help="Thêm .srt, .json, .words.json")
 
     return {
         "topic": topic,
@@ -236,7 +238,6 @@ def _sidebar() -> dict:
         "num_speakers": num_speakers,
         "voice_ids": voice_ids,
         "model_id": model_id,
-        "generate_subs": generate_subs,
     }
 
 
@@ -244,121 +245,247 @@ def main():
     st.set_page_config(page_title="Unified Podcast Studio", layout="wide")
     st.title("🎧 Unified Podcast Studio")
     st.markdown(
-        "**Single pipeline:** Script (Gemini) → Audio (ElevenLabs) → Subtitles (Whisper)"
+        "**Manual workflow:** Outline → Script (per part) → Audio (per part) → Subtitles (optional)"
     )
 
     _init_state()
-
     cfg = _sidebar()
 
     if not cfg["topic"]:
         st.info("👈 Nhập chủ đề podcast ở sidebar để bắt đầu.")
         return
 
-    client = _get_client()
+    client = get_client()
+    el_config = _el_load_settings().get("elevenlabs", {})
+
+    # ── Step 1: Generate Outline ────────────────────────────────────────
+    st.header("1️⃣ Outline")
+
+    outline_col1, outline_col2 = st.columns([3, 1])
+    with outline_col1:
+        if st.session_state["outline"]:
+            st.success(f"✅ Outline created: {cfg['num_parts']} parts")
+            with st.expander("📋 View Outline", expanded=False):
+                for part in st.session_state["outline"].parts:
+                    st.markdown(
+                        f"**Part {part.index}: {part.title}**\n\n"
+                        f"{part.summary}\n\n"
+                        f"Key points: {', '.join(part.key_points)}"
+                    )
+        else:
+            st.info("Chưa generate outline. Bấm nút bên phải.")
+
+    with outline_col2:
+        if st.button("Generate Outline", key="btn_outline", use_container_width=True):
+            with st.spinner("⏳ Generating outline..."):
+                try:
+                    outline = _generate_outline(
+                        client,
+                        cfg["topic"],
+                        cfg["num_parts"],
+                        cfg["minutes_per_part"],
+                        audience_level=cfg["audience_level"],
+                        tone=cfg["tone"],
+                        continuous=cfg["continuous"],
+                        show_name=cfg["show_name"],
+                        channel_name=cfg["channel_name"],
+                    )
+                    st.session_state["outline"] = outline
+                    st.success("✅ Outline generated!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+
+    if not st.session_state["outline"]:
+        st.stop()
+
+    # ── Step 2: Generate Scripts & Audio (per part) ──────────────────────
+    st.divider()
+    st.header("2️⃣ Scripts & Audio")
+
+    outline = st.session_state["outline"]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if not st.session_state["base_slug"]:
+        st.session_state["base_slug"] = f"{_slug(cfg['topic'])}_{timestamp}"
+
+    base_slug = st.session_state["base_slug"]
+
+    for part in outline.parts:
+        with st.expander(
+            f"Part {part.index}: {part.title}",
+            expanded=False,
+        ):
+            col1, col2, col3 = st.columns(3)
+
+            # Script Status
+            with col1:
+                if part.index in st.session_state["scripts"]:
+                    st.success("✅ Script generated")
+                    if st.checkbox(f"View script Part {part.index}"):
+                        st.text_area(
+                            f"Script Part {part.index}",
+                            value=st.session_state["scripts"][part.index],
+                            height=150,
+                            disabled=True,
+                            key=f"view_script_{part.index}",
+                        )
+                else:
+                    st.info("Script not generated yet")
+
+                if st.button(f"Generate Script", key=f"btn_script_{part.index}"):
+                    with st.spinner(f"⏳ Generating script for Part {part.index}..."):
+                        try:
+                            prev_titles = tuple(
+                                p.title for p in outline.parts[: part.index - 1]
+                            )
+                            prev_tail = ()
+                            if part.index > 1:
+                                prev_text = st.session_state["scripts"].get(part.index - 1)
+                                if prev_text:
+                                    lines = prev_text.strip().split("\n")
+                                    prev_tail = tuple(
+                                        l for l in lines[-6:] if l.strip()
+                                    )
+
+                            script = generate_part_script(
+                                client=client,
+                                topic=cfg["topic"],
+                                style_key=cfg["style"],
+                                part_index=part.index,
+                                total_parts=cfg["num_parts"],
+                                target_minutes=cfg["minutes_per_part"],
+                                part_title=part.title,
+                                part_summary=part.summary,
+                                key_points=part.key_points,
+                                previous_part_titles=prev_titles,
+                                previous_tail_lines=prev_tail,
+                                audience_level=cfg["audience_level"],
+                                tone=cfg["tone"],
+                                continuous=cfg["continuous"],
+                                show_name=cfg["show_name"],
+                                channel_name=cfg["channel_name"],
+                            )
+                            st.session_state["scripts"][part.index] = script.to_readable()
+
+                            # Save transcript
+                            txt_path = HISTORY_DIR / f"{base_slug}_part{part.index}.txt"
+                            txt_path.parent.mkdir(parents=True, exist_ok=True)
+                            txt_path.write_text(
+                                f"Topic: {cfg['topic']}\n"
+                                f"Part: {part.index}/{cfg['num_parts']} — {part.title}\n"
+                                f"Summary: {part.summary}\n\n"
+                                + script.to_readable(),
+                                encoding="utf-8",
+                            )
+
+                            st.success(f"✅ Script generated! Saved to {txt_path.name}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
+
+            # Audio Status
+            with col2:
+                if part.index in st.session_state["audio_paths"]:
+                    st.success("✅ Audio generated")
+                    wav_path = st.session_state["audio_paths"][part.index]
+                    st.caption(f"📁 {Path(wav_path).name}")
+                else:
+                    st.info("Audio not generated yet")
+
+                audio_disabled = part.index not in st.session_state["scripts"]
+                if st.button(
+                    f"Render Audio",
+                    key=f"btn_audio_{part.index}",
+                    disabled=audio_disabled,
+                ):
+                    with st.spinner(f"⏳ Rendering audio for Part {part.index}..."):
+                        try:
+                            script_text = st.session_state["scripts"][part.index]
+                            script = parse_script_text(cfg["topic"], cfg["style"], script_text)
+                            wav_path = HISTORY_DIR / f"{base_slug}_part{part.index}.wav"
+
+                            el_config_copy = dict(el_config)
+                            el_config_copy["output_format"] = "pcm_24000"
+
+                            voice_ids = cfg["voice_ids"]
+                            cleaned_voices = [v for v in voice_ids if v]
+
+                            if not cleaned_voices:
+                                cleaned_voices = el_config_copy.get("voices", [""])
+
+                            if len(cleaned_voices) == 1:
+                                render_single_voice(script, wav_path, cleaned_voices[0], el_config_copy)
+                            else:
+                                render_multi_speaker(script, wav_path, cleaned_voices, el_config_copy)
+
+                            st.session_state["audio_paths"][part.index] = str(wav_path)
+                            st.success(f"✅ Audio rendered! Saved to {wav_path.name}")
+                            st.rerun()
+                        except ElevenLabsError as e:
+                            st.error(f"❌ ElevenLabs error: {e}")
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
+
+            # Subtitle Status
+            with col3:
+                if part.index in st.session_state["subtitle_paths"]:
+                    st.success("✅ Subtitle generated")
+                    srt_path = st.session_state["subtitle_paths"][part.index]
+                    st.caption(f"📁 {Path(srt_path).name}")
+                else:
+                    st.info("Subtitle not generated")
+
+                sub_disabled = part.index not in st.session_state["audio_paths"]
+                if st.button(
+                    f"Generate Subtitles",
+                    key=f"btn_sub_{part.index}",
+                    disabled=sub_disabled,
+                ):
+                    with st.spinner(f"⏳ Generating subtitles for Part {part.index}..."):
+                        try:
+                            wav_path = st.session_state["audio_paths"][part.index]
+                            srt_path = Path(wav_path).with_suffix(".srt")
+                            base_path = Path(wav_path).with_suffix("")
+
+                            transcript = transcribe(wav_path, language="vi", model_size="medium")
+                            srt_path.write_text(
+                                transcript_to_srt(transcript), encoding="utf-8"
+                            )
+                            write_json_outputs(transcript, base_path)
+
+                            st.session_state["subtitle_paths"][part.index] = str(srt_path)
+                            st.success(f"✅ Subtitles generated! {srt_path.name}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
+
+    # ── Step 3: Summary ─────────────────────────────────────────────────
+    st.divider()
+    st.header("3️⃣ Summary")
+
+    total_scripts = len(st.session_state["scripts"])
+    total_audio = len(st.session_state["audio_paths"])
+    total_subs = len(st.session_state["subtitle_paths"])
 
     col1, col2, col3 = st.columns(3)
-
     with col1:
-        if st.button("🚀 Tạo Podcast", use_container_width=True, type="primary"):
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            base_slug = f"{_slug(cfg['topic'])}_{timestamp}"
-            st.session_state["base_slug"] = base_slug
-
-            # Filter out empty voice_ids; use defaults if not fully specified
-            voice_ids = [v for v in cfg["voice_ids"] if v]
-            if not voice_ids:
-                # Use default empty list (will use ElevenLabs defaults)
-                voice_ids = cfg["voice_ids"]
-
-            try:
-                # Create container for progress
-                progress_container = st.container()
-
-                with progress_container:
-                    with st.status("🎙️ Đang tạo podcast...", expanded=True) as status:
-                        st.write("📍 Bước 1/3: Generating outline...")
-
-                        result = run_unified_podcast(
-                            client=client,
-                            topic=cfg["topic"],
-                            style_key=cfg["style"],
-                            speaker1="Speaker1",
-                            speaker2="Speaker2",
-                            num_parts=cfg["num_parts"],
-                            minutes_per_part=cfg["minutes_per_part"],
-                            output_dir=HISTORY_DIR,
-                            base_slug=base_slug,
-                            generate_subtitles=cfg["generate_subs"],
-                            audience_level=cfg["audience_level"],
-                            tone=cfg["tone"],
-                            continuous=cfg["continuous"],
-                            show_name=cfg["show_name"],
-                            channel_name=cfg["channel_name"],
-                            num_speakers=cfg["num_speakers"],
-                            voice_ids=voice_ids if voice_ids else None,
-                            progress_callback=lambda stage, msg: st.write(f"📍 {stage}: {msg}") if msg else None,
-                        )
-
-                        status.update(label="✅ Hoàn thành!", state="complete")
-
-                st.success(f"✅ Tạo thành công! {len(result.parts)} part(s)")
-                if result.has_subtitles:
-                    st.info("📝 Phụ đề đã tạo (.srt, .json, .words.json)")
-
-                with st.expander("📁 File outputs", expanded=True):
-                    st.markdown("**Outline:**")
-                    st.code(str(result.outline_path))
-
-                    for part in result.parts:
-                        st.markdown(f"**Part {part.index}: {part.title}**")
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            st.caption(f"📄 {part.txt_path.name}")
-                        with col_b:
-                            st.caption(f"🎵 {part.wav_path.name}")
-
-            except ElevenLabsError as e:
-                st.error(f"❌ ElevenLabs error: {e}")
-            except Exception as e:
-                st.error(f"❌ Error: {e}")
-                import traceback
-                st.error(traceback.format_exc())
-
+        st.metric("Scripts", total_scripts, f"/ {cfg['num_parts']}")
     with col2:
-        if st.button("📋 View History", use_container_width=True):
-            if HISTORY_DIR.exists():
-                files = sorted(HISTORY_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
-                st.write(f"📁 {len(files)} files in history")
-                for f in files[:20]:
-                    st.write(f"  • {f.name}")
-            else:
-                st.info("No history yet")
-
+        st.metric("Audio", total_audio, f"/ {cfg['num_parts']}")
     with col3:
+        st.metric("Subtitles", total_subs, f"/ {cfg['num_parts']}")
+
+    if total_audio > 0:
+        st.success(
+            f"✅ Generated {total_audio} audio file(s) in {HISTORY_DIR}"
+        )
+
         if is_admin():
-            if st.button("🔄 Clear History", use_container_width=True):
-                import shutil
-                if HISTORY_DIR.exists():
-                    shutil.rmtree(HISTORY_DIR)
-                st.success("Cleared!")
+            if st.button("🗑️ Clear all outputs"):
+                st.session_state["scripts"].clear()
+                st.session_state["audio_paths"].clear()
+                st.session_state["subtitle_paths"].clear()
                 st.rerun()
-
-    st.divider()
-    st.markdown("### ℹ️ Luồng hoạt động")
-    st.markdown(
-        """
-1. **Script Generation** — Gemini tạo kịch bản đối thoại theo từng part
-2. **Audio Rendering** — ElevenLabs tạo audio từ kịch bản
-3. **Subtitle Gen** — Whisper (local) tạo phụ đề từ audio (tuỳ chọn)
-
-**Output:**
-- `.wav` — audio files (1 per part)
-- `.txt` — transcript (1 per part)
-- `.srt`, `.json`, `.words.json` — subtitles (nếu bật)
-- `_outline.json` — metadata structure
-"""
-    )
 
 
 if __name__ == "__main__":
