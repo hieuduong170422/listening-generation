@@ -456,6 +456,13 @@ def main():
                     st.success("✅ Audio generated")
                     wav_path = st.session_state["audio_paths"][part.index]
                     st.caption(f"📁 {Path(wav_path).name}")
+
+                    # 🎵 Audio player
+                    try:
+                        with open(wav_path, "rb") as audio_file:
+                            st.audio(audio_file, format="audio/wav")
+                    except Exception as e:
+                        st.warning(f"Can't play audio: {e}")
                 else:
                     st.info("⏳ Audio not generated")
 
