@@ -142,12 +142,14 @@ def _sidebar() -> dict:
                 total_minutes = int(chosen)
 
         with col2:
+            max_parts = min(20, total_minutes)
+            default_parts = min(10, max_parts)  # Ensure default respects max
             num_parts = int(
                 st.number_input(
                     "Số part",
                     min_value=1,
-                    max_value=min(20, total_minutes),
-                    value=10,
+                    max_value=max_parts,
+                    value=default_parts,
                     help="Chia nhỏ = ít lỗi TTS",
                 )
             )
