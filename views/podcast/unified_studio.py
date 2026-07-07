@@ -716,12 +716,63 @@ def main():
             f"✅ Generated {total_audio} audio file(s) in {HISTORY_DIR}"
         )
 
-        if is_admin():
-            if st.button("🗑️ Clear all outputs"):
-                st.session_state["scripts"].clear()
-                st.session_state["audio_paths"].clear()
-                st.session_state["subtitle_paths"].clear()
-                st.rerun()
+    # Download all subtitles as ZIP (if available)
+    if total_subs > 0:
+        st.divider()
+        st.subheader("📥 Download Subtitles")
+
+        # Show individual subtitle download links
+        with st.expander(f"📝 {total_subs} Subtitle files", expanded=False):
+            for part_idx, srt_path in st.session_state["subtitle_paths"].items():
+                col_name, col_dl = st.columns([2, 1])
+                with col_name:
+                    st.caption(f"Part {part_idx}: {Path(srt_path).name}")
+                with col_dl:
+                    try:
+                        with open(srt_path, "r", encoding="utf-8") as srt_file:
+                            st.download_button(
+                                "📥",
+                                data=srt_file.read(),
+                                file_name=Path(srt_path).name,
+                                mime="text/plain",
+                                key=f"summary_dl_srt_{part_idx}",
+                                use_container_width=True,
+                            )
+                    except Exception as e:
+                        st.warning(f"Error: {e}")
+
+        # Also show JSON files (word-level timing)
+        json_count = sum(1 for p in st.session_state["subtitle_paths"].values()
+                        if Path(p).with_suffix(".json").exists())
+        if json_count > 0:
+            with st.expander(f"⏱️ {json_count} Word-level timing (.json)", expanded=False):
+                for part_idx, srt_path in st.session_state["subtitle_paths"].items():
+                    json_path = Path(srt_path).with_suffix(".json")
+                    if json_path.exists():
+                        col_name, col_dl = st.columns([2, 1])
+                        with col_name:
+                            st.caption(f"Part {part_idx}: {json_path.name}")
+                        with col_dl:
+                            try:
+                                with open(json_path, "r", encoding="utf-8") as json_file:
+                                    st.download_button(
+                                        "📥",
+                                        data=json_file.read(),
+                                        file_name=json_path.name,
+                                        mime="application/json",
+                                        key=f"summary_dl_json_{part_idx}",
+                                        use_container_width=True,
+                                    )
+                            except Exception as e:
+                                st.warning(f"Error: {e}")
+
+    if is_admin():
+        st.divider()
+        if st.button("🗑️ Clear all outputs", use_container_width=True):
+            st.session_state["scripts"].clear()
+            st.session_state["audio_paths"].clear()
+            st.session_state["subtitle_paths"].clear()
+            st.rerun()
 
 
 if __name__ == "__main__":
