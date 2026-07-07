@@ -478,28 +478,28 @@ def main():
             f"Part {part.index}: {part.title}",
             expanded=True,
         ):
-            # Show script (always visible if generated)
-            if part.index in st.session_state["scripts"]:
-                st.success("✅ Script generated")
-                script_text = st.session_state["scripts"][part.index]
+            # Clean 3-column layout: Script | Audio | Subtitle
+            col_script, col_audio, col_subtitle = st.columns(3, gap="medium")
 
-                # Script text area + copy button
-                col_script_buttons = st.columns([4, 1])
-                with col_script_buttons[1]:
-                    if st.button("📋 Copy", key=f"btn_copy_script_{part.index}", use_container_width=True):
-                        st.write(script_text)  # This doesn't copy, need alternative
+            # ─────── SCRIPT COLUMN ───────────────────────────────────────
+            with col_script:
+                st.subheader("📝 Script")
 
-                st.text_area(
-                    f"Script Part {part.index}",
-                    value=script_text,
-                    height=200,
-                    disabled=True,
-                    key=f"view_script_{part.index}",
-                )
+                if part.index in st.session_state["scripts"]:
+                    st.success("✅ Generated", icon="✓")
+                    script_text = st.session_state["scripts"][part.index]
 
-                # Better approach: use columns for download buttons
-                col_dl1, col_dl2 = st.columns(2)
-                with col_dl1:
+                    # Show script text
+                    st.text_area(
+                        "content",
+                        value=script_text,
+                        height=200,
+                        disabled=True,
+                        key=f"view_script_{part.index}",
+                        label_visibility="collapsed",
+                    )
+
+                    # Download button
                     st.download_button(
                         "📥 Download Script",
                         data=script_text,
@@ -507,15 +507,9 @@ def main():
                         mime="text/plain",
                         use_container_width=True,
                     )
-            else:
-                st.info("⏳ Script not generated yet. Use button below or 'Generate All Scripts'")
-
-            col1, col2, col3 = st.columns(3)
-
-            # Script Button (if not generated)
-            with col1:
-                if part.index not in st.session_state["scripts"]:
-                    if st.button(f"Generate Script", key=f"btn_script_{part.index}", use_container_width=True):
+                else:
+                    st.info("⏳ Not generated", icon="ℹ️")
+                    if st.button(f"Generate", key=f"btn_script_{part.index}", use_container_width=True, type="primary"):
                         with st.spinner(f"⏳ Generating script for Part {part.index}..."):
                             try:
                                 prev_titles = tuple(
@@ -566,19 +560,21 @@ def main():
                             except Exception as e:
                                 st.error(f"❌ Error: {e}")
 
-            # Audio Status
-            with col2:
+            # ─────── AUDIO COLUMN ────────────────────────────────────────
+            with col_audio:
+                st.subheader("🎵 Audio")
+
                 if part.index in st.session_state["audio_paths"]:
-                    st.success("✅ Audio generated")
+                    st.success("✅ Generated", icon="✓")
                     wav_path = st.session_state["audio_paths"][part.index]
                     st.caption(f"📁 {Path(wav_path).name}")
 
-                    # 🎵 Audio player
+                    # Audio player
                     try:
                         with open(wav_path, "rb") as audio_file:
                             st.audio(audio_file, format="audio/wav")
 
-                        # Download audio button
+                        # Download button
                         with open(wav_path, "rb") as audio_file:
                             st.download_button(
                                 "📥 Download Audio",
@@ -588,16 +584,17 @@ def main():
                                 use_container_width=True,
                             )
                     except Exception as e:
-                        st.warning(f"Can't play audio: {e}")
+                        st.warning(f"Error: {e}")
                 else:
-                    st.info("⏳ Audio not generated")
+                    st.info("⏳ Not generated", icon="ℹ️")
 
                 audio_disabled = part.index not in st.session_state["scripts"]
                 if st.button(
-                    f"Render Audio",
+                    "Render Audio",
                     key=f"btn_audio_{part.index}",
                     disabled=audio_disabled,
                     use_container_width=True,
+                    type="primary" if not audio_disabled else "secondary",
                 ):
                     with st.spinner(f"⏳ Rendering audio for Part {part.index}..."):
                         try:
@@ -648,14 +645,16 @@ def main():
                         except Exception as e:
                             st.error(f"❌ Error: {e}")
 
-            # Subtitle Status
-            with col3:
+            # ─────── SUBTITLE COLUMN ────────────────────────────────────
+            with col_subtitle:
+                st.subheader("📄 Subtitles")
+
                 if part.index in st.session_state["subtitle_paths"]:
-                    st.success("✅ Subtitle generated")
+                    st.success("✅ Generated", icon="✓")
                     srt_path = st.session_state["subtitle_paths"][part.index]
                     st.caption(f"📁 {Path(srt_path).name}")
 
-                    # Download subtitles
+                    # Download SRT button
                     try:
                         with open(srt_path, "r", encoding="utf-8") as srt_file:
                             st.download_button(
@@ -666,16 +665,32 @@ def main():
                                 use_container_width=True,
                             )
                     except Exception as e:
-                        st.warning(f"Can't download: {e}")
+                        st.warning(f"Error: {e}")
+
+                    # Also show JSON download
+                    json_path = Path(srt_path).with_suffix(".json")
+                    if json_path.exists():
+                        try:
+                            with open(json_path, "r", encoding="utf-8") as json_file:
+                                st.download_button(
+                                    "⏱️ Download JSON (timing)",
+                                    data=json_file.read(),
+                                    file_name=json_path.name,
+                                    mime="application/json",
+                                    use_container_width=True,
+                                )
+                        except Exception as e:
+                            st.warning(f"Error: {e}")
                 else:
-                    st.info("⏳ Subtitle not generated")
+                    st.info("⏳ Not generated", icon="ℹ️")
 
                 sub_disabled = part.index not in st.session_state["audio_paths"]
                 if st.button(
-                    f"Generate Subtitles",
+                    "Generate Subtitles",
                     key=f"btn_sub_{part.index}",
                     disabled=sub_disabled,
                     use_container_width=True,
+                    type="primary" if not sub_disabled else "secondary",
                 ):
                     with st.spinner(f"⏳ Generating subtitles for Part {part.index}..."):
                         try:
