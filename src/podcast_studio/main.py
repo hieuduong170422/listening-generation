@@ -12,6 +12,7 @@ from podcast_studio.config import AVAILABLE_VOICES, DEFAULT_SPEAKER_1, DEFAULT_S
 from podcast_studio.multi_part import load_outline, run_multi_part
 from podcast_studio.script_generator import generate_script
 from podcast_studio.tts_renderer import render_script
+from podcast_studio.unified_podcast_generator import run_unified_podcast
 
 ROOT = Path(__file__).resolve().parent
 HISTORY_DIR = ROOT / "history"
@@ -71,8 +72,10 @@ def main() -> None:
     parser.add_argument("--speaker2", default=DEFAULT_SPEAKER_2, help=f"Voice cho Speaker2 (mặc định {DEFAULT_SPEAKER_2}).")
     parser.add_argument("--out", help="Đường dẫn file WAV output (mặc định: history/<slug>_<timestamp>.wav).")
     parser.add_argument("--multi", action="store_true", help="Chạy chế độ nhiều part (long-form podcast).")
-    parser.add_argument("--parts", type=int, default=5, help="Số part khi --multi (mặc định 5).")
+    parser.add_argument("--unified", action="store_true", help="Chạy unified pipeline (Gemini script + ElevenLabs audio + Whisper subs).")
+    parser.add_argument("--parts", type=int, default=10, help="Số part khi --multi hoặc --unified (mặc định 10).")
     parser.add_argument("--minutes-per-part", type=int, default=4, help="Phút mỗi part khi --multi (mặc định 4).")
+    parser.add_argument("--generate-subs", action="store_true", help="Tạo phụ đề Whisper (chỉ dùng khi --unified).")
     parser.add_argument("--only", help="Chỉ chạy 1 số part, vd: --only 2,4 (cần --reuse-outline).")
     parser.add_argument("--reuse-outline", help="Đường dẫn outline.json đã có để regen part mà không gen lại outline.")
     args = parser.parse_args()
@@ -92,6 +95,39 @@ def main() -> None:
     _validate_voice(params["speaker2"])
 
     client = genai.Client(api_key=api_key)
+
+    if args.unified:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_slug = f"{_slug(params['topic'])}_{timestamp}"
+        only_parts: tuple[int, ...] = ()
+        if args.only:
+            only_parts = tuple(int(x.strip()) for x in args.only.split(",") if x.strip())
+
+        existing_outline = None
+        if args.reuse_outline:
+            outline_path = Path(args.reuse_outline)
+            existing_outline = load_outline(outline_path)
+            base_slug = outline_path.stem.replace("_outline", "")
+            print(f"→ Reusing outline: {outline_path}")
+
+        result = run_unified_podcast(
+            client=client,
+            topic=params["topic"],
+            style_key=params["style"],
+            speaker1=params["speaker1"],
+            speaker2=params["speaker2"],
+            num_parts=args.parts,
+            minutes_per_part=args.minutes_per_part,
+            output_dir=HISTORY_DIR,
+            base_slug=base_slug,
+            generate_subtitles=args.generate_subs,
+            only_parts=only_parts,
+            existing_outline=existing_outline,
+        )
+        print(f"\n✓ Done. Generated {len(result.parts)} part(s). Outline: {result.outline_path}")
+        if result.has_subtitles:
+            print(f"✓ Subtitles generated (.srt, .json, .words.json)")
+        return
 
     if args.multi:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

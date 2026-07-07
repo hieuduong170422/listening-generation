@@ -49,6 +49,7 @@ pages = {
         st.Page("views/home.py", title="Trang chủ", icon="🏠", url_path="home", default=True),
     ],
     "🎧 Podcast Studio": [
+        st.Page("views/podcast/unified_studio.py", title="Tạo Podcast (Unified)", icon="✨", url_path="podcast-unified"),
         st.Page("views/podcast/tts_studio.py", title="Podcast (Gemini)", icon="🎙️", url_path="podcast-gemini"),
         st.Page("views/podcast/elevenlabs_studio.py", title="Podcast (ElevenLabs)", icon="🎧", url_path="podcast-elevenlabs"),
         st.Page("views/podcast/tts_settings.py", title="Cài đặt TTS", icon="⚙️", url_path="tts-settings"),
