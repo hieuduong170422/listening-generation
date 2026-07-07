@@ -131,7 +131,9 @@ def _sidebar() -> dict:
         col1, col2 = st.columns(2)
         with col1:
             preset_options = [str(m) for m in DURATION_PRESETS] + ["Custom"]
-            chosen = st.selectbox("Tổng thời lượng", preset_options, index=2)
+            # Default to 45 minutes (index 8) = ~10 parts × 4 min each
+            default_preset_idx = 8 if len(DURATION_PRESETS) > 8 else len(DURATION_PRESETS) - 1
+            chosen = st.selectbox("Tổng thời lượng", preset_options, index=default_preset_idx)
             if chosen == "Custom":
                 total_minutes = int(
                     st.number_input(
@@ -473,20 +475,30 @@ def main():
                             el_config_copy = dict(el_config)
                             el_config_copy["output_format"] = "pcm_24000"
 
-                            # Get voices: use selected ones, fallback to config defaults
+                            # Get voices: use selected ones, fallback to config defaults, then API defaults
                             voice_ids = cfg["voice_ids"]
                             cleaned_voices = [v for v in voice_ids if v]
 
                             if not cleaned_voices:
-                                # Fallback to default voices from config
-                                cleaned_voices = el_config_copy.get("voices", [""])[
+                                # Fallback 1: use config defaults (tts_settings.json)
+                                default_voices = el_config_copy.get("voices", [""])[
                                     :cfg["num_speakers"]
                                 ]
-                                cleaned_voices = [v for v in cleaned_voices if v]
+                                cleaned_voices = [v for v in default_voices if v]
+
+                            if not cleaned_voices:
+                                # Fallback 2: fetch first available voice from ElevenLabs API
+                                try:
+                                    available_voices = _el_fetch_voices_cached()
+                                    if available_voices:
+                                        first_voice = available_voices[0]["voice_id"]
+                                        cleaned_voices = [first_voice] * cfg["num_speakers"]
+                                except Exception:
+                                    pass
 
                             if not cleaned_voices:
                                 st.error(
-                                    "❌ Không có voice được chọn. Vào sidebar Settings tab để chọn voice."
+                                    "❌ Không tìm được voice. Check ELEVENLABS_API_KEY trong .env"
                                 )
                                 return
 
