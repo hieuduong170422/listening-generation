@@ -67,14 +67,20 @@ def _normalize_quotes(s: str) -> str:
 
 def _repair_truncated_json(s: str) -> str:
     """Đóng ngoặc còn thiếu khi Gemini cắt JSON giữa chừng."""
-    # Xóa trailing dở dang: dấu phẩy, key chưa xong, string chưa đóng
-    s = re.sub(r',\s*$', '', s.rstrip())
-    s = re.sub(r',\s*"[^"]*$', '', s)   # key chưa có value
-    s = re.sub(r':\s*"[^"]*$', '', s)    # value string chưa đóng
-    s = re.sub(r':\s*\[$', '', s)        # array mở chưa có gì
+    s = s.rstrip()
+
+    # Xóa string chưa đóng ở cuối (VD: "key": "abc)
+    if re.search(r':\s*"[^"]*$', s):
+        s = re.sub(r':\s*"[^"]*$', '', s)
+
+    # Xóa key chưa có value ở cuối (VD: , "title")
+    if re.search(r',\s*"[^"]*"\s*$', s):
+        s = re.sub(r',\s*"[^"]*"\s*$', '', s)
+
+    # Xóa trailing comma
     s = re.sub(r',\s*$', '', s.rstrip())
 
-    # Đếm ngoặc chưa đóng rồi đóng lại theo thứ tự ngược
+    # Đóng ngoặc còn thiếu theo stack
     stack = []
     in_str = False
     esc = False
@@ -210,17 +216,18 @@ def generate_outline(
             hint = f" (finish_reason={finish_reason})"
         raise ValueError(str(e) + hint) from e
 
-    items = payload.get("parts", [])
-    if len(items) != num_parts:
+    # Lọc bỏ các item không hợp lệ (thiếu title — thường do JSON bị truncate)
+    items = [it for it in payload.get("parts", []) if it.get("title")]
+    if len(items) < max(1, num_parts - 1):
         raise ValueError(
-            f"Outline trả về {len(items)} part, mong đợi {num_parts}. Raw:\n{raw}"
+            f"Outline chỉ trả về {len(items)} part hợp lệ, mong đợi {num_parts}. Raw:\n{raw}"
         )
 
     parts = tuple(
         PartBrief(
             index=i + 1,
             title=str(item["title"]).strip(),
-            summary=str(item["summary"]).strip(),
+            summary=str(item.get("summary") or "").strip(),
             key_points=tuple(str(kp).strip() for kp in item.get("key_points", [])),
         )
         for i, item in enumerate(items)
