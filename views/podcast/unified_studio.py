@@ -27,6 +27,9 @@ from podcast_studio.config import (
     STYLES,
     TONES,
 )
+from podcast_studio.vclip_tts import VclipError
+from podcast_studio.vclip_tts import render_multi_speaker as vclip_render_multi
+from podcast_studio.vclip_tts import render_single_voice as vclip_render_single
 from podcast_studio.elevenlabs_tts import (
     ElevenLabsError,
     list_voices as _el_list_voices,
@@ -51,6 +54,39 @@ def _slug(text: str, max_len: int = 40) -> str:
     text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
     text = re.sub(r"[-\s]+", "-", text)
     return text[:max_len].strip("-") or "untitled"
+
+
+def _render_audio_part(script, wav_path: Path, cfg: dict, el_config: dict) -> Path:
+    """Dispatch render sang ElevenLabs hoặc vclip tuỳ cfg['tts_provider']."""
+    provider = cfg.get("tts_provider", "elevenlabs")
+
+    if provider == "vclip":
+        vclip_voices = [v for v in cfg.get("vclip_voice_ids", []) if v]
+        if not vclip_voices:
+            raise VclipError("Chưa nhập Voice ID cho vclip.io trong sidebar.")
+        speed = cfg.get("vclip_speed", 1.0)
+        if len(vclip_voices) == 1:
+            return vclip_render_single(script, wav_path, vclip_voices[0], speed)
+        return vclip_render_multi(script, wav_path, vclip_voices, speed)
+
+    # ElevenLabs (default)
+    el_config_copy = dict(el_config)
+    el_config_copy["output_format"] = "pcm_24000"
+    cleaned = [v for v in cfg.get("voice_ids", []) if v]
+    if not cleaned:
+        cleaned = [v for v in el_config_copy.get("voices", [""])[:cfg["num_speakers"]] if v]
+    if not cleaned:
+        try:
+            avail = _el_fetch_voices_cached()
+            if avail:
+                cleaned = [avail[0]["voice_id"]] * cfg["num_speakers"]
+        except Exception:
+            pass
+    if not cleaned:
+        raise ElevenLabsError("Không tìm được ElevenLabs voice. Kiểm tra ELEVENLABS_API_KEY.")
+    if len(cleaned) == 1:
+        return render_single_voice(script, wav_path, cleaned[0], el_config_copy)
+    return render_multi_speaker(script, wav_path, cleaned, el_config_copy)
 
 
 def _init_state() -> None:
@@ -187,20 +223,12 @@ def _sidebar() -> dict:
 
         st.session_state["_audience_for_suggest"] = audience_level
 
-    with st.sidebar.expander("🎙️ ElevenLabs Voices", expanded=True):
-        try:
-            all_voices = _el_fetch_voices_cached()
-        except ElevenLabsError as e:
-            st.error(f"Lỗi load voice: {e}")
-            st.stop()
-
-        settings = _el_load_settings()
-        el_config = settings.get("elevenlabs", {})
-
-        model_id = st.selectbox(
-            "Model TTS",
-            ELEVEN_MODELS,
-            index=ELEVEN_MODELS.index(el_config.get("model_id", "eleven_flash_v2_5")),
+    with st.sidebar.expander("🎙️ TTS Provider", expanded=True):
+        tts_provider = st.radio(
+            "Chọn dịch vụ TTS",
+            options=["elevenlabs", "vclip"],
+            format_func=lambda x: "🎧 ElevenLabs" if x == "elevenlabs" else "🇻🇳 vclip.io",
+            horizontal=True,
         )
 
         num_speakers = st.selectbox(
@@ -210,21 +238,49 @@ def _sidebar() -> dict:
             format_func=lambda n: f"{n} người" + (" (monologue)" if n == 1 else ""),
         )
 
+        # ── ElevenLabs config ──────────────────────────────────────
         voice_ids = []
-        for i in range(num_speakers):
-            voice_names = [
-                f"{v.get('name', '')} (id: {v.get('voice_id', '')})" for v in all_voices
-            ]
-            voice_names.insert(0, "— Default —")
-            chosen_idx = st.selectbox(
-                f"Voice Speaker {i + 1}",
-                range(len(voice_names)),
-                format_func=lambda idx: voice_names[idx],
+        model_id = "eleven_flash_v2_5"
+        if tts_provider == "elevenlabs":
+            try:
+                all_voices = _el_fetch_voices_cached()
+            except ElevenLabsError as e:
+                st.error(f"Lỗi load voice ElevenLabs: {e}")
+                all_voices = []
+
+            settings = _el_load_settings()
+            el_config = settings.get("elevenlabs", {})
+            model_id = st.selectbox(
+                "Model",
+                ELEVEN_MODELS,
+                index=ELEVEN_MODELS.index(el_config.get("model_id", "eleven_flash_v2_5")),
             )
-            if chosen_idx > 0:
-                voice_ids.append(all_voices[chosen_idx - 1]["voice_id"])
-            else:
-                voice_ids.append("")
+            for i in range(num_speakers):
+                voice_names = [
+                    f"{v.get('name', '')} ({v.get('voice_id', '')})" for v in all_voices
+                ]
+                voice_names.insert(0, "— Default —")
+                chosen_idx = st.selectbox(
+                    f"Voice Speaker {i + 1}",
+                    range(len(voice_names)),
+                    format_func=lambda idx, vn=voice_names: vn[idx],
+                    key=f"el_voice_{i}",
+                )
+                voice_ids.append(all_voices[chosen_idx - 1]["voice_id"] if chosen_idx > 0 else "")
+
+        # ── vclip.io config ────────────────────────────────────────
+        vclip_voice_ids = []
+        vclip_speed = 1.0
+        if tts_provider == "vclip":
+            st.caption("Lấy Voice ID tại trang **Giọng nói** trên vclip.io")
+            vclip_speed = st.slider("Tốc độ đọc", min_value=0.5, max_value=2.0, value=1.0, step=0.1)
+            for i in range(num_speakers):
+                vid = st.text_input(
+                    f"Voice ID Speaker {i + 1}",
+                    placeholder="VD: voice_abc123",
+                    key=f"vclip_voice_{i}",
+                )
+                vclip_voice_ids.append(vid.strip())
 
     return {
         "topic": topic,
@@ -238,8 +294,13 @@ def _sidebar() -> dict:
         "tone": tone,
         "continuous": continuous,
         "num_speakers": num_speakers,
+        "tts_provider": tts_provider,
+        # ElevenLabs
         "voice_ids": voice_ids,
         "model_id": model_id,
+        # vclip
+        "vclip_voice_ids": vclip_voice_ids,
+        "vclip_speed": vclip_speed,
     }
 
 
@@ -408,34 +469,7 @@ def main():
                         script = parse_script_text(cfg["topic"], cfg["style"], script_text)
                         wav_path = HISTORY_DIR / f"{base_slug}_part{part.index}.wav"
 
-                        el_config_copy = dict(el_config)
-                        el_config_copy["output_format"] = "pcm_24000"
-
-                        voice_ids = cfg["voice_ids"]
-                        cleaned_voices = [v for v in voice_ids if v]
-
-                        if not cleaned_voices:
-                            default_voices = el_config_copy.get("voices", [""])[:cfg["num_speakers"]]
-                            cleaned_voices = [v for v in default_voices if v]
-
-                        if not cleaned_voices:
-                            try:
-                                available_voices = _el_fetch_voices_cached()
-                                if available_voices:
-                                    first_voice = available_voices[0]["voice_id"]
-                                    cleaned_voices = [first_voice] * cfg["num_speakers"]
-                            except Exception:
-                                pass
-
-                        if not cleaned_voices:
-                            st.error("❌ Không tìm được voice")
-                            break
-
-                        if len(cleaned_voices) == 1:
-                            render_single_voice(script, wav_path, cleaned_voices[0], el_config_copy)
-                        else:
-                            render_multi_speaker(script, wav_path, cleaned_voices, el_config_copy)
-
+                        _render_audio_part(script, wav_path, cfg, el_config)
                         st.session_state["audio_paths"][part.index] = str(wav_path)
                     except Exception as e:
                         st.error(f"Error Part {part.index}: {e}")
@@ -615,46 +649,12 @@ def main():
                             script = parse_script_text(cfg["topic"], cfg["style"], script_text)
                             wav_path = HISTORY_DIR / f"{base_slug}_part{part.index}.wav"
 
-                            el_config_copy = dict(el_config)
-                            el_config_copy["output_format"] = "pcm_24000"
-
-                            # Get voices: use selected ones, fallback to config defaults, then API defaults
-                            voice_ids = cfg["voice_ids"]
-                            cleaned_voices = [v for v in voice_ids if v]
-
-                            if not cleaned_voices:
-                                # Fallback 1: use config defaults (tts_settings.json)
-                                default_voices = el_config_copy.get("voices", [""])[
-                                    :cfg["num_speakers"]
-                                ]
-                                cleaned_voices = [v for v in default_voices if v]
-
-                            if not cleaned_voices:
-                                # Fallback 2: fetch first available voice from ElevenLabs API
-                                try:
-                                    available_voices = _el_fetch_voices_cached()
-                                    if available_voices:
-                                        first_voice = available_voices[0]["voice_id"]
-                                        cleaned_voices = [first_voice] * cfg["num_speakers"]
-                                except Exception:
-                                    pass
-
-                            if not cleaned_voices:
-                                st.error(
-                                    "❌ Không tìm được voice. Check ELEVENLABS_API_KEY trong .env"
-                                )
-                                return
-
-                            if len(cleaned_voices) == 1:
-                                render_single_voice(script, wav_path, cleaned_voices[0], el_config_copy)
-                            else:
-                                render_multi_speaker(script, wav_path, cleaned_voices, el_config_copy)
-
+                            _render_audio_part(script, wav_path, cfg, el_config)
                             st.session_state["audio_paths"][part.index] = str(wav_path)
-                            st.success(f"✅ Audio rendered!")
+                            st.success("✅ Audio rendered!")
                             st.rerun()
-                        except ElevenLabsError as e:
-                            st.error(f"❌ ElevenLabs error: {e}")
+                        except (ElevenLabsError, VclipError) as e:
+                            st.error(f"❌ TTS error: {e}")
                         except Exception as e:
                             st.error(f"❌ Error: {e}")
 
