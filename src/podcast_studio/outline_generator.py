@@ -65,6 +65,39 @@ def _normalize_quotes(s: str) -> str:
     )
 
 
+def _repair_truncated_json(s: str) -> str:
+    """Đóng ngoặc còn thiếu khi Gemini cắt JSON giữa chừng."""
+    # Xóa trailing dở dang: dấu phẩy, key chưa xong, string chưa đóng
+    s = re.sub(r',\s*$', '', s.rstrip())
+    s = re.sub(r',\s*"[^"]*$', '', s)   # key chưa có value
+    s = re.sub(r':\s*"[^"]*$', '', s)    # value string chưa đóng
+    s = re.sub(r':\s*\[$', '', s)        # array mở chưa có gì
+    s = re.sub(r',\s*$', '', s.rstrip())
+
+    # Đếm ngoặc chưa đóng rồi đóng lại theo thứ tự ngược
+    stack = []
+    in_str = False
+    esc = False
+    for ch in s:
+        if esc:
+            esc = False
+            continue
+        if ch == '\\' and in_str:
+            esc = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch in '{[':
+            stack.append('}' if ch == '{' else ']')
+        elif ch in '}]' and stack:
+            stack.pop()
+
+    return s + ''.join(reversed(stack))
+
+
 def _safe_load_json(raw: str) -> dict:
     attempts: list[str] = [raw]
     try:
@@ -74,6 +107,12 @@ def _safe_load_json(raw: str) -> dict:
     attempts.append(_TRAILING_COMMA_RE.sub(r"\1", _normalize_quotes(raw)))
     if len(attempts) > 1:
         attempts.append(_TRAILING_COMMA_RE.sub(r"\1", _normalize_quotes(attempts[1])))
+    # Fallback: thử repair JSON bị truncate
+    attempts.append(_repair_truncated_json(raw))
+    try:
+        attempts.append(_repair_truncated_json(_extract_json(raw)))
+    except ValueError:
+        pass
 
     last_err: Exception | None = None
     for candidate in attempts:
@@ -149,8 +188,9 @@ def generate_outline(
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
-            max_output_tokens=16384,
+            max_output_tokens=2048,
             temperature=0.7,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
     track_response(usage_store, response, "text")
