@@ -265,7 +265,6 @@ def main():
     # Update topic if user changed it here
     if topic_input and topic_input != cfg["topic"]:
         cfg["topic"] = topic_input
-        st.session_state["topic_text"] = topic_input
 
     if not cfg["topic"]:
         st.info("👆 Nhập chủ đề podcast ở trên để bắt đầu")
