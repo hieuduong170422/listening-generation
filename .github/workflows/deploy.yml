@@ -19,6 +19,12 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H 34.124.248.163 >> ~/.ssh/known_hosts
 
+      - name: Deploy GCP service account key
+        run: |
+          echo "${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}" | base64 -d | \
+            ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 \
+            "mkdir -p /opt/audivy/secrets && cat > /opt/audivy/secrets/gen-lang-client-0454656089-bd7514706035.json && chmod 600 /opt/audivy/secrets/gen-lang-client-0454656089-bd7514706035.json"
+
       - name: Update .env on server
         run: |
           echo "${{ secrets.ENV_FILE }}" | ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 "cat > /opt/audivy/.env"
