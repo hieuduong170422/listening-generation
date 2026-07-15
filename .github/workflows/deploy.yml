@@ -56,14 +56,14 @@ jobs:
             echo "rebuild=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Rebuild + restart (deps changed)
+      - name: Rebuild + deploy (deps changed)
         if: steps.check_rebuild.outputs.rebuild == 'true'
         run: |
           ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 \
             "cd /opt/audivy && docker compose build && docker compose up -d"
 
-      - name: Restart container (code-only change)
+      - name: Deploy (code/env change)
         if: steps.check_rebuild.outputs.rebuild == 'false'
         run: |
           ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 \
-            "cd /opt/audivy && docker compose restart audivy"
+            "cd /opt/audivy && docker compose up -d"
