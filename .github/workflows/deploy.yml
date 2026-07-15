@@ -19,6 +19,10 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H 34.124.248.163 >> ~/.ssh/known_hosts
 
+      - name: Update .env on server
+        run: |
+          echo "${{ secrets.ENV_FILE }}" | ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 "cat > /opt/audivy/.env"
+
       - name: Sync code to server
         run: |
           rsync -az --delete \
