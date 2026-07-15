@@ -4,6 +4,7 @@
 2. For each part: Generate Script → Render Audio
 3. (Optional) Generate Subtitles
 """
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -272,12 +273,18 @@ def _sidebar() -> dict:
         vclip_voice_ids = []
         vclip_speed = 1.0
         if tts_provider == "vclip":
+            _DEFAULT_VOICES = [
+                os.getenv("VCLIP_VOICE_MALE", ""),
+                os.getenv("VCLIP_VOICE_FEMALE", ""),
+            ]
             st.caption("Lấy Voice ID tại trang **Giọng nói** trên vclip.io")
             vclip_speed = st.slider("Tốc độ đọc", min_value=0.5, max_value=2.0, value=1.0, step=0.1)
             for i in range(num_speakers):
+                default_vid = _DEFAULT_VOICES[i] if i < len(_DEFAULT_VOICES) else ""
                 vid = st.text_input(
                     f"Voice ID Speaker {i + 1}",
-                    placeholder="VD: voice_abc123",
+                    value=default_vid,
+                    placeholder="VD: hruBcESGYx2AUWRppNacCd",
                     key=f"vclip_voice_{i}",
                 )
                 vclip_voice_ids.append(vid.strip())

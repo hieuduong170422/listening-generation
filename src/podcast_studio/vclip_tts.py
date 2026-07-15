@@ -103,7 +103,7 @@ def render_single_voice(
     audio_bytes = _synthesize_text(text, voice_id, speed)
     final_path = output_path.with_suffix(".wav")
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    seg = AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
+    seg = AudioSegment.from_file(io.BytesIO(audio_bytes))
     seg.export(str(final_path), format="wav")
     return final_path
 
@@ -133,7 +133,7 @@ def render_multi_speaker(
         if progress_callback:
             progress_callback(idx, total, line.speaker)
         audio_bytes = _synthesize_text(line.text, voice, speed)
-        segments.append(AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3"))
+        segments.append(AudioSegment.from_file(io.BytesIO(audio_bytes)))
 
     if not segments:
         raise VclipError("Script trống — không có gì để render.")

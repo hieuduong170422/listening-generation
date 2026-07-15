@@ -1,0 +1,59 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 34.124.248.163 >> ~/.ssh/known_hosts
+
+      - name: Sync code to server
+        run: |
+          rsync -az --delete \
+            --exclude='.git/' \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
+            --exclude='.env' \
+            --exclude='.env.server' \
+            --exclude='secrets/' \
+            --exclude='uploads/' \
+            --exclude='history/' \
+            --exclude='.venv/' \
+            --exclude='*.db' \
+            --exclude='*.wav' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            ./ root@34.124.248.163:/opt/audivy/
+
+      - name: Check if rebuild needed
+        id: check_rebuild
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^(Dockerfile|requirements\.txt)$' || true)
+          if [ -n "$CHANGED" ]; then
+            echo "rebuild=true" >> $GITHUB_OUTPUT
+          else
+            echo "rebuild=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Rebuild + restart (deps changed)
+        if: steps.check_rebuild.outputs.rebuild == 'true'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 \
+            "cd /opt/audivy && docker compose build && docker compose up -d"
+
+      - name: Restart container (code-only change)
+        if: steps.check_rebuild.outputs.rebuild == 'false'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 \
+            "cd /opt/audivy && docker compose restart audivy"
