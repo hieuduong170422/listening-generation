@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getToken } from '@/lib/api'
 import { StudioProvider } from '@/lib/store'
+import { LangProvider } from '@/lib/lang'
 import StudioApp from '@/components/StudioApp'
 
 export default function HomePage() {
@@ -38,8 +39,10 @@ export default function HomePage() {
   }
 
   return (
-    <StudioProvider>
-      <StudioApp />
-    </StudioProvider>
+    <LangProvider>
+      <StudioProvider>
+        <StudioApp />
+      </StudioProvider>
+    </LangProvider>
   )
 }

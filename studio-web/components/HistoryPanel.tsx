@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { fetchHistory, fetchSubscription, getHistoryAudioUrl } from '@/lib/api'
+import { useLang } from '@/lib/lang'
 import type { HistoryItem, Subscription } from '@/lib/types'
 
 function formatDate(unix: number): string {
@@ -17,6 +18,7 @@ function formatChars(n: number): string {
 }
 
 export default function HistoryPanel() {
+  const { t } = useLang()
   const [sub, setSub] = useState<Subscription | null>(null)
   const [items, setItems] = useState<HistoryItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,7 +54,7 @@ export default function HistoryPanel() {
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'var(--t3)' }}>
-        Loading…
+        {t.loading}
       </div>
     )
   }
@@ -67,7 +69,7 @@ export default function HistoryPanel() {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.625rem' }}>
             <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--t1)' }}>
-              ElevenLabs Quota
+              {t.quotaTitle}
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--t2)', fontVariantNumeric: 'tabular-nums' }}>
               {formatChars(sub.character_count)} / {formatChars(sub.character_limit)} chars
@@ -112,7 +114,7 @@ export default function HistoryPanel() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         {items.length === 0 && !error && (
           <p style={{ color: 'var(--t3)', fontSize: '0.875rem', textAlign: 'center', marginTop: '2rem' }}>
-            No history yet
+            {t.noHistory}
           </p>
         )}
         {items.map((item) => {
