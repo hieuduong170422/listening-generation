@@ -10,6 +10,7 @@ import {
 } from 'react'
 import type { Outline, StudioConfig } from './types'
 import { DEFAULT_CONFIG } from './types'
+import { upsertOutlineEntry, type OutlineHistoryEntry } from './history'
 
 // ── Persistence (localStorage) ────────────────────────────────────────────────
 
@@ -19,6 +20,7 @@ const PERSIST_DEBOUNCE_MS = 300
 interface PersistedState {
   config: StudioConfig
   outline: Outline | null
+  outlineId: string | null
   scripts: Record<number, string>
   audioIds: Record<number, string>
   selectedPart: number | null
@@ -35,6 +37,7 @@ function loadPersisted(): PersistedState | null {
     return {
       config: { ...DEFAULT_CONFIG, ...(data.config ?? {}) },
       outline: data.outline ?? null,
+      outlineId: typeof data.outlineId === 'string' ? data.outlineId : null,
       scripts: data.scripts ?? {},
       audioIds: data.audioIds ?? {},
       selectedPart: typeof data.selectedPart === 'number' ? data.selectedPart : null,
@@ -49,6 +52,7 @@ function savePersisted(state: StudioState): void {
     const data: PersistedState = {
       config: state.config,
       outline: state.outline,
+      outlineId: state.outlineId,
       scripts: state.scripts,
       audioIds: state.audioIds,
       selectedPart: state.selectedPart,
@@ -64,6 +68,7 @@ function savePersisted(state: StudioState): void {
 export interface StudioState {
   config: StudioConfig
   outline: Outline | null
+  outlineId: string | null             // id ổn định của dàn ý hiện tại (cho history)
   scripts: Record<number, string>      // part_index → script text
   audioIds: Record<number, string>     // part_index → audio_id
   selectedPart: number | null
@@ -77,6 +82,7 @@ export interface StudioState {
 const initialState: StudioState = {
   config: DEFAULT_CONFIG,
   outline: null,
+  outlineId: null,
   scripts: {},
   audioIds: {},
   selectedPart: null,
@@ -92,7 +98,8 @@ const initialState: StudioState = {
 type Action =
   | { type: 'SET_CONFIG'; config: StudioConfig }
   | { type: 'PATCH_CONFIG'; patch: Partial<StudioConfig> }
-  | { type: 'SET_OUTLINE'; outline: Outline }
+  | { type: 'SET_OUTLINE'; outline: Outline; outlineId: string }
+  | { type: 'LOAD_SNAPSHOT'; entry: OutlineHistoryEntry }
   | { type: 'SET_SCRIPT'; partIndex: number; text: string }
   | { type: 'SET_AUDIO_ID'; partIndex: number; audioId: string }
   | { type: 'SELECT_PART'; partIndex: number | null }
@@ -118,8 +125,21 @@ function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         outline: action.outline,
+        outlineId: action.outlineId,
         scripts: {},
         audioIds: {},
+        selectedPart: null,
+        error: null,
+      }
+
+    case 'LOAD_SNAPSHOT':
+      return {
+        ...state,
+        config: action.entry.config,
+        outline: action.entry.outline,
+        outlineId: action.entry.id,
+        scripts: action.entry.scripts,
+        audioIds: action.entry.audioIds,
         selectedPart: null,
         error: null,
       }
@@ -187,9 +207,21 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   // Lưu localStorage mỗi khi dữ liệu chính đổi (debounce vì gõ script dispatch từng phím)
   useEffect(() => {
-    const id = window.setTimeout(() => savePersisted(state), PERSIST_DEBOUNCE_MS)
+    const id = window.setTimeout(() => {
+      savePersisted(state)
+      // Đồng bộ vào lịch sử dàn ý (giữ 7 ngày) để xem lại sau
+      if (state.outline && state.outlineId) {
+        upsertOutlineEntry({
+          id: state.outlineId,
+          config: state.config,
+          outline: state.outline,
+          scripts: state.scripts,
+          audioIds: state.audioIds,
+        })
+      }
+    }, PERSIST_DEBOUNCE_MS)
     return () => window.clearTimeout(id)
-  }, [state.config, state.outline, state.scripts, state.audioIds, state.selectedPart])
+  }, [state.config, state.outline, state.outlineId, state.scripts, state.audioIds, state.selectedPart])
 
   return (
     <StudioContext.Provider value={{ state, dispatch }}>

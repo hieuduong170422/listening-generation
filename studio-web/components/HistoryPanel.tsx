@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { fetchHistory, fetchSubscription, getHistoryAudioUrl } from '@/lib/api'
 import { useLang } from '@/lib/lang'
+import { useStudio } from '@/lib/store'
+import { loadOutlineHistory, removeOutlineEntry, type OutlineHistoryEntry } from '@/lib/history'
 import type { HistoryItem, Subscription } from '@/lib/types'
 
 function formatDate(unix: number): string {
@@ -17,7 +19,123 @@ function formatChars(n: number): string {
   return String(n)
 }
 
-export default function HistoryPanel() {
+function OutlineHistoryTable({ onOpen }: { onOpen: () => void }) {
+  const { t } = useLang()
+  const { dispatch } = useStudio()
+  const [entries, setEntries] = useState<OutlineHistoryEntry[]>([])
+
+  useEffect(() => { setEntries(loadOutlineHistory()) }, [])
+
+  function handleOpen(entry: OutlineHistoryEntry) {
+    dispatch({ type: 'LOAD_SNAPSHOT', entry })
+    onOpen()
+  }
+
+  function handleDelete(id: string) {
+    removeOutlineEntry(id)
+    setEntries((prev) => prev.filter((e) => e.id !== id))
+  }
+
+  const cellStyle: React.CSSProperties = {
+    padding: '0.5rem 0.75rem', fontSize: '0.8125rem',
+    borderBottom: '1px solid var(--bd-s)', verticalAlign: 'top',
+  }
+  const headStyle: React.CSSProperties = {
+    ...cellStyle,
+    fontSize: '0.6875rem', fontWeight: 600, color: 'var(--t3)',
+    textTransform: 'uppercase', letterSpacing: '0.05em',
+    textAlign: 'left', whiteSpace: 'nowrap',
+  }
+
+  return (
+    <div style={{
+      backgroundColor: 'var(--bg2)', border: '1px solid var(--bd)',
+      borderRadius: '8px', marginBottom: '1.25rem', overflow: 'hidden',
+    }}>
+      <div style={{ padding: '0.875rem 1rem 0.25rem' }}>
+        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--t1)' }}>
+          {t.outlineHistoryTitle}
+        </div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--t3)', marginTop: '0.2rem' }}>
+          {t.outlineHistoryNote}
+        </div>
+      </div>
+
+      {entries.length === 0 ? (
+        <p style={{ padding: '0.75rem 1rem 1rem', fontSize: '0.8125rem', color: 'var(--t3)' }}>
+          {t.outlineHistoryEmpty}
+        </p>
+      ) : (
+        <div style={{ overflowX: 'auto', padding: '0.5rem 0.25rem 0.25rem' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={headStyle}>{t.colTopic}</th>
+                <th style={headStyle}>{t.colDate}</th>
+                <th style={headStyle}>{t.colParts}</th>
+                <th style={headStyle} />
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => {
+                const total = entry.outline.parts.length
+                const nScripts = Object.keys(entry.scripts).length
+                const nAudio = Object.keys(entry.audioIds).length
+                return (
+                  <tr key={entry.id}>
+                    <td style={{ ...cellStyle, color: 'var(--t1)', fontWeight: 500, maxWidth: '320px' }}>
+                      <span style={{
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden', lineHeight: 1.4,
+                      }}>
+                        {entry.outline.topic}
+                      </span>
+                    </td>
+                    <td style={{ ...cellStyle, color: 'var(--t2)', whiteSpace: 'nowrap' }}>
+                      {formatDate(Math.floor(entry.updatedAt / 1000))}
+                    </td>
+                    <td style={{ ...cellStyle, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={{ color: 'var(--t2)' }}>{total}</span>
+                      <span style={{ color: 'var(--ok)' }}> / {nScripts}</span>
+                      <span style={{ color: 'var(--amber)' }}> / {nAudio}</span>
+                    </td>
+                    <td style={{ ...cellStyle, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                      <button
+                        onClick={() => handleOpen(entry)}
+                        style={{
+                          padding: '0.25rem 0.625rem', marginRight: '0.375rem',
+                          backgroundColor: 'var(--accent)', border: 'none',
+                          borderRadius: '5px', color: '#fff',
+                          fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                        }}
+                      >
+                        {t.openBtn}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(entry.id)}
+                        style={{
+                          padding: '0.25rem 0.625rem',
+                          backgroundColor: 'transparent',
+                          border: '1px solid rgba(229,83,75,0.4)',
+                          borderRadius: '5px', color: '#E5534B',
+                          fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                        }}
+                      >
+                        {t.deleteBtn}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function HistoryPanel({ onOpenOutline }: { onOpenOutline?: () => void }) {
   const { t } = useLang()
   const [sub, setSub] = useState<Subscription | null>(null)
   const [items, setItems] = useState<HistoryItem[]>([])
@@ -53,14 +171,20 @@ export default function HistoryPanel() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'var(--t3)' }}>
-        {t.loading}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem' }}>
+        <OutlineHistoryTable onOpen={onOpenOutline ?? (() => {})} />
+        <div style={{ textAlign: 'center', color: 'var(--t3)', padding: '2rem 0' }}>
+          {t.loading}
+        </div>
       </div>
     )
   }
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem' }}>
+      {/* Outline history (localStorage, 7 ngày) */}
+      <OutlineHistoryTable onOpen={onOpenOutline ?? (() => {})} />
+
       {/* Subscription quota */}
       {sub && (
         <div style={{

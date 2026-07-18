@@ -223,7 +223,7 @@ export default function StudioApp() {
         )}
 
         {/* ── History tab ── */}
-        {tab === 'history' && <HistoryPanel />}
+        {tab === 'history' && <HistoryPanel onOpenOutline={() => setTab('studio')} />}
       </main>
     </div>
   )

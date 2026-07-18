@@ -118,7 +118,10 @@ export default function ConfigRail() {
     dispatch({ type: 'SET_ERROR', message: null })
     try {
       const res = await generateOutline(cfg)
-      dispatch({ type: 'SET_OUTLINE', outline: res.outline })
+      const outlineId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      dispatch({ type: 'SET_OUTLINE', outline: res.outline, outlineId })
     } catch (err) {
       dispatch({ type: 'SET_ERROR', message: err instanceof ApiError ? err.message : 'Outline generation failed' })
     } finally {
