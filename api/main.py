@@ -148,11 +148,13 @@ from api.routes.auth_router import router as auth_router
 from api.routes.elevenlabs import router as elevenlabs_router
 from api.routes.podcast import router as podcast_router
 from api.routes.topics import router as topics_router
+from api.routes.affiliate import router as affiliate_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(elevenlabs_router, prefix="/api/elevenlabs", tags=["elevenlabs"])
 app.include_router(podcast_router, prefix="/api/podcast", tags=["podcast"])
 app.include_router(topics_router, prefix="/api/topics", tags=["topics"])
+app.include_router(affiliate_router, prefix="/api/affiliate", tags=["affiliate"])
 
 
 @app.get("/api/health", tags=["health"])
