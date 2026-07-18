@@ -137,11 +137,11 @@ export default function ConfigRail() {
       flexShrink: 0,
       backgroundColor: 'var(--bg1)',
       borderRight: '1px solid var(--bd)',
-      display: 'flex',
-      flexDirection: 'column',
+      display: 'grid',
+      gridTemplateRows: '1fr auto',
       height: 'calc(100vh - 50px)',
     }}>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 0.75rem 0.5rem' }}>
+      <div style={{ overflowY: 'auto', padding: '0.75rem 0.75rem 0.5rem' }}>
         <div style={s.gap}>
 
           {/* Topic */}
@@ -326,7 +326,6 @@ export default function ConfigRail() {
         padding: '0.625rem 0.75rem',
         borderTop: '1px solid var(--bd)',
         backgroundColor: 'var(--bg1)',
-        flexShrink: 0,
       }}>
         {state.error && (
           <p style={{
