@@ -47,15 +47,17 @@ const TEXT_MODELS = [
   { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
 ]
 
+type ConfigTab = 'Content' | 'Voices' | 'Advanced'
+
 const s = {
   label: {
     display: 'block',
-    fontSize: '0.75rem',
-    fontWeight: 500,
-    color: 'var(--t2)',
-    marginBottom: '0.375rem',
+    fontSize: '0.6875rem',
+    fontWeight: 600,
+    color: 'var(--t3)',
+    marginBottom: '0.3rem',
     textTransform: 'uppercase' as const,
-    letterSpacing: '0.04em',
+    letterSpacing: '0.05em',
   },
   input: {
     width: '100%',
@@ -66,6 +68,7 @@ const s = {
     color: 'var(--t1)',
     fontSize: '0.8125rem',
     outline: 'none',
+    boxSizing: 'border-box' as const,
   },
   select: {
     width: '100%',
@@ -77,19 +80,12 @@ const s = {
     fontSize: '0.8125rem',
     outline: 'none',
     cursor: 'pointer',
+    boxSizing: 'border-box' as const,
   },
-  section: {
-    marginBottom: '1.25rem',
-  },
-  row: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '0.5rem',
-  },
-  fieldGroup: {
+  field: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '0.375rem',
+    gap: '0.3rem',
   },
   sliderRow: {
     display: 'flex',
@@ -97,34 +93,19 @@ const s = {
     gap: '0.5rem',
   },
   sliderVal: {
-    fontSize: '0.75rem',
+    fontSize: '0.6875rem',
     color: 'var(--t2)',
-    minWidth: '2.5rem',
+    minWidth: '2.25rem',
     textAlign: 'right' as const,
     fontVariantNumeric: 'tabular-nums' as const,
   },
-  divider: {
-    height: '1px',
-    backgroundColor: 'var(--bd-s)',
-    margin: '1rem 0',
-  },
-  sectionTitle: {
-    fontSize: '0.6875rem',
-    fontWeight: 600,
-    color: 'var(--t3)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.06em',
-    marginBottom: '0.75rem',
-  },
+  gap: { display: 'flex', flexDirection: 'column' as const, gap: '0.75rem' },
 }
 
-interface ConfigRailProps {
-  className?: string
-}
-
-export default function ConfigRail({ className }: ConfigRailProps) {
+export default function ConfigRail() {
   const { state, dispatch } = useStudio()
   const cfg = state.config
+  const [tab, setTab] = useState<ConfigTab>('Content')
   const [voices, setVoices] = useState<Voice[]>([])
   const [voicesLoading, setVoicesLoading] = useState(false)
   const [suggesting, setSuggesting] = useState(false)
@@ -153,7 +134,7 @@ export default function ConfigRail({ className }: ConfigRailProps) {
       const res = await suggestTopics({
         topic: cfg.topic,
         language: cfg.language,
-        count: 6,
+        count: 5,
         text_model: cfg.text_model,
         audience_level: cfg.audience_level,
         tone: cfg.tone,
@@ -188,230 +169,231 @@ export default function ConfigRail({ className }: ConfigRailProps) {
   const numSpeakers = cfg.num_speakers
 
   return (
-    <aside
-      className={className}
-      style={{
-        width: '280px',
-        flexShrink: 0,
-        backgroundColor: 'var(--bg1)',
-        borderRight: '1px solid var(--bd)',
+    <aside style={{
+      width: '290px',
+      flexShrink: 0,
+      backgroundColor: 'var(--bg1)',
+      borderRight: '1px solid var(--bd)',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    }}>
+      {/* Tab bar */}
+      <div style={{
         display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Scrollable body */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+        borderBottom: '1px solid var(--bd)',
+        flexShrink: 0,
+        padding: '0 0.75rem',
+        gap: '0.125rem',
+        paddingTop: '0.5rem',
+      }}>
+        {(['Content', 'Voices', 'Advanced'] as ConfigTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              flex: 1,
+              padding: '0.4rem 0.25rem',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderBottom: `2px solid ${tab === t ? 'var(--accent)' : 'transparent'}`,
+              color: tab === t ? 'var(--t1)' : 'var(--t3)',
+              fontSize: '0.75rem',
+              fontWeight: tab === t ? 600 : 400,
+              cursor: 'pointer',
+              transition: 'color 0.15s, border-color 0.15s',
+              marginBottom: '-1px',
+            }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
 
-        {/* Topic */}
-        <div style={s.section}>
-          <p style={s.sectionTitle}>Topic</p>
-          <div style={s.fieldGroup}>
-            <textarea
-              value={cfg.topic}
-              onChange={(e) => patch({ topic: e.target.value })}
-              rows={3}
-              placeholder="What is this episode about?"
-              style={{
-                ...s.input,
-                resize: 'vertical',
-                lineHeight: 1.5,
-                fontFamily: 'inherit',
-              }}
-            />
-            <button
-              onClick={handleSuggest}
-              disabled={suggesting}
-              style={{
-                padding: '0.375rem 0.625rem',
-                backgroundColor: 'var(--bg3)',
-                border: '1px solid var(--bd)',
-                borderRadius: '5px',
-                color: suggesting ? 'var(--t3)' : 'var(--t2)',
-                fontSize: '0.75rem',
-                cursor: suggesting ? 'default' : 'pointer',
-              }}
-            >
-              {suggesting ? 'Suggesting…' : '✦ Suggest topics'}
-            </button>
+      {/* Scrollable tab body */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0.875rem 0.875rem 0.5rem' }}>
 
-            {suggestions.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                {suggestions.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => { patch({ topic: s }); setSuggestions([]) }}
-                    style={{
-                      textAlign: 'left',
-                      padding: '0.375rem 0.5rem',
-                      backgroundColor: 'var(--accent-g)',
-                      border: '1px solid rgba(107,95,227,0.2)',
-                      borderRadius: '4px',
-                      color: 'var(--t1)',
-                      fontSize: '0.75rem',
-                      cursor: 'pointer',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div style={s.divider} />
-
-        {/* Show info */}
-        <div style={s.section}>
-          <p style={s.sectionTitle}>Show</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={s.fieldGroup}>
-              <label style={s.label}>Show name</label>
-              <input
-                type="text"
-                value={cfg.show_name}
-                onChange={(e) => patch({ show_name: e.target.value })}
-                placeholder="My Podcast"
-                style={s.input}
+        {/* ── Content tab ── */}
+        {tab === 'Content' && (
+          <div style={s.gap}>
+            {/* Topic */}
+            <div style={s.field}>
+              <label style={s.label}>Topic</label>
+              <textarea
+                value={cfg.topic}
+                onChange={(e) => patch({ topic: e.target.value })}
+                rows={3}
+                placeholder="What is this episode about?"
+                style={{
+                  ...s.input,
+                  resize: 'vertical',
+                  lineHeight: 1.5,
+                  fontFamily: 'inherit',
+                }}
               />
-            </div>
-            <div style={s.fieldGroup}>
-              <label style={s.label}>Channel</label>
-              <input
-                type="text"
-                value={cfg.channel_name}
-                onChange={(e) => patch({ channel_name: e.target.value })}
-                placeholder="@mychannel"
-                style={s.input}
-              />
-            </div>
-            <div style={s.fieldGroup}>
-              <label style={s.label}>Language</label>
-              <select
-                value={cfg.language}
-                onChange={(e) => patch({ language: e.target.value })}
-                style={s.select}
+              <button
+                onClick={handleSuggest}
+                disabled={suggesting}
+                style={{
+                  padding: '0.35rem 0.625rem',
+                  backgroundColor: 'var(--bg3)',
+                  border: '1px solid var(--bd)',
+                  borderRadius: '5px',
+                  color: suggesting ? 'var(--t3)' : 'var(--t2)',
+                  fontSize: '0.75rem',
+                  cursor: suggesting ? 'default' : 'pointer',
+                  textAlign: 'left' as const,
+                }}
               >
-                {LANGUAGES.map((l) => (
-                  <option key={l.value} value={l.value}>{l.label}</option>
-                ))}
+                {suggesting ? 'Suggesting…' : '✦ Suggest topics'}
+              </button>
+
+              {suggestions.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  {suggestions.map((sug) => (
+                    <button
+                      key={sug}
+                      onClick={() => { patch({ topic: sug }); setSuggestions([]) }}
+                      style={{
+                        textAlign: 'left',
+                        padding: '0.35rem 0.5rem',
+                        backgroundColor: 'var(--accent-g)',
+                        border: '1px solid rgba(107,95,227,0.2)',
+                        borderRadius: '4px',
+                        color: 'var(--t1)',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Language */}
+            <div style={s.field}>
+              <label style={s.label}>Language</label>
+              <select value={cfg.language} onChange={(e) => patch({ language: e.target.value })} style={s.select}>
+                {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
               </select>
             </div>
-          </div>
-        </div>
 
-        <div style={s.divider} />
+            {/* Style + Audience (2 cols) */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <div style={s.field}>
+                <label style={s.label}>Style</label>
+                <select value={cfg.style} onChange={(e) => patch({ style: e.target.value })} style={s.select}>
+                  {STYLES.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+                </select>
+              </div>
+              <div style={s.field}>
+                <label style={s.label}>Audience</label>
+                <select value={cfg.audience_level} onChange={(e) => patch({ audience_level: e.target.value })} style={s.select}>
+                  {AUDIENCE_LEVELS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+                </select>
+              </div>
+            </div>
 
-        {/* Structure */}
-        <div style={s.section}>
-          <p style={s.sectionTitle}>Structure</p>
-          <div style={s.row}>
-            <div style={s.fieldGroup}>
-              <label style={s.label}>Parts</label>
-              <input
-                type="number"
-                min={1} max={20}
-                value={cfg.num_parts}
-                onChange={(e) => patch({ num_parts: Number(e.target.value) })}
-                style={s.input}
-              />
-            </div>
-            <div style={s.fieldGroup}>
-              <label style={s.label}>Min / part</label>
-              <input
-                type="number"
-                min={1} max={60}
-                value={cfg.minutes_per_part}
-                onChange={(e) => patch({
-                  minutes_per_part: Number(e.target.value),
-                  total_minutes: cfg.num_parts * Number(e.target.value),
-                })}
-                style={s.input}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div style={s.divider} />
-
-        {/* Content */}
-        <div style={s.section}>
-          <p style={s.sectionTitle}>Content</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={s.fieldGroup}>
-              <label style={s.label}>Style</label>
-              <select value={cfg.style} onChange={(e) => patch({ style: e.target.value })} style={s.select}>
-                {STYLES.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
-              </select>
-            </div>
-            <div style={s.fieldGroup}>
-              <label style={s.label}>Audience</label>
-              <select value={cfg.audience_level} onChange={(e) => patch({ audience_level: e.target.value })} style={s.select}>
-                {AUDIENCE_LEVELS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
-              </select>
-            </div>
-            <div style={s.fieldGroup}>
+            {/* Tone */}
+            <div style={s.field}>
               <label style={s.label}>Tone</label>
               <select value={cfg.tone} onChange={(e) => patch({ tone: e.target.value })} style={s.select}>
                 {TONES.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
               </select>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+
+            {/* Parts + Min/part */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <div style={s.field}>
+                <label style={s.label}>Parts</label>
+                <input
+                  type="number" min={1} max={20}
+                  value={cfg.num_parts}
+                  onChange={(e) => patch({ num_parts: Number(e.target.value) })}
+                  style={s.input}
+                />
+              </div>
+              <div style={s.field}>
+                <label style={s.label}>Min / part</label>
+                <input
+                  type="number" min={1} max={60}
+                  value={cfg.minutes_per_part}
+                  onChange={(e) => patch({
+                    minutes_per_part: Number(e.target.value),
+                    total_minutes: cfg.num_parts * Number(e.target.value),
+                  })}
+                  style={s.input}
+                />
+              </div>
+            </div>
+
+            {/* Continuous */}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
               <input
                 type="checkbox"
-                id="continuous"
                 checked={cfg.continuous}
                 onChange={(e) => patch({ continuous: e.target.checked })}
-                style={{ accentColor: 'var(--accent)', width: '14px', height: '14px' }}
+                style={{ accentColor: 'var(--accent)', width: '14px', height: '14px', flexShrink: 0 }}
               />
-              <label htmlFor="continuous" style={{ fontSize: '0.8125rem', color: 'var(--t2)', cursor: 'pointer' }}>
-                Continuous narrative
-              </label>
+              <span style={{ fontSize: '0.8125rem', color: 'var(--t2)' }}>Continuous narrative</span>
+            </label>
+
+            {/* Text model */}
+            <div style={s.field}>
+              <label style={s.label}>Text model</label>
+              <select value={cfg.text_model} onChange={(e) => patch({ text_model: e.target.value })} style={s.select}>
+                {TEXT_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
             </div>
           </div>
-        </div>
+        )}
 
-        <div style={s.divider} />
-
-        {/* Voices */}
-        <div style={s.section}>
-          <p style={s.sectionTitle}>Voices</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-            {/* Num speakers toggle */}
-            <div style={{ display: 'flex', gap: '0.375rem' }}>
-              {[1, 2].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => {
-                    const names = n === 1 ? ['Host'] : ['Host A', 'Host B']
-                    const voiceIds = Array(n).fill('')
-                    patch({ num_speakers: n, host_names: names, host_voices: voiceIds })
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '0.375rem',
-                    backgroundColor: numSpeakers === n ? 'var(--accent)' : 'var(--bg3)',
-                    border: `1px solid ${numSpeakers === n ? 'var(--accent)' : 'var(--bd)'}`,
-                    borderRadius: '5px',
-                    color: numSpeakers === n ? '#fff' : 'var(--t2)',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    fontWeight: numSpeakers === n ? 600 : 400,
-                  }}
-                >
-                  {n === 1 ? 'Solo' : 'Duo'}
-                </button>
-              ))}
+        {/* ── Voices tab ── */}
+        {tab === 'Voices' && (
+          <div style={s.gap}>
+            {/* Solo / Duo toggle */}
+            <div style={s.field}>
+              <label style={s.label}>Speakers</label>
+              <div style={{ display: 'flex', gap: '0.375rem' }}>
+                {[1, 2].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      const names = n === 1 ? ['Host'] : ['Host A', 'Host B']
+                      patch({ num_speakers: n, host_names: names, host_voices: Array(n).fill('') })
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '0.4375rem',
+                      backgroundColor: numSpeakers === n ? 'var(--accent)' : 'var(--bg3)',
+                      border: `1px solid ${numSpeakers === n ? 'var(--accent)' : 'var(--bd)'}`,
+                      borderRadius: '5px',
+                      color: numSpeakers === n ? '#fff' : 'var(--t2)',
+                      fontSize: '0.8125rem',
+                      cursor: 'pointer',
+                      fontWeight: numSpeakers === n ? 600 : 400,
+                    }}
+                  >
+                    {n === 1 ? 'Solo' : 'Duo'}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Per-speaker config */}
             {Array.from({ length: numSpeakers }, (_, i) => (
-              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <div key={i} style={{
+                backgroundColor: 'var(--bg2)',
+                border: '1px solid var(--bd)',
+                borderRadius: '7px',
+                padding: '0.75rem',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                   <span style={{
-                    width: '20px', height: '20px', borderRadius: '50%',
+                    width: '22px', height: '22px', borderRadius: '50%',
                     backgroundColor: i === 0 ? 'var(--accent)' : 'var(--amber)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: '0.625rem', fontWeight: 700, color: '#fff', flexShrink: 0,
@@ -426,7 +408,7 @@ export default function ConfigRail({ className }: ConfigRailProps) {
                       names[i] = e.target.value
                       patch({ host_names: names })
                     }}
-                    placeholder={`Speaker ${i + 1}`}
+                    placeholder={`Speaker ${i + 1} name`}
                     style={{ ...s.input, flex: 1 }}
                   />
                 </div>
@@ -440,24 +422,17 @@ export default function ConfigRail({ className }: ConfigRailProps) {
                   style={s.select}
                   disabled={voicesLoading}
                 >
-                  <option value="">{voicesLoading ? 'Loading…' : '— Select voice —'}</option>
+                  <option value="">{voicesLoading ? 'Loading voices…' : '— Select voice —'}</option>
                   {voices.map((v) => (
                     <option key={v.voice_id} value={v.voice_id}>{v.name}</option>
                   ))}
                 </select>
               </div>
             ))}
-          </div>
-        </div>
 
-        <div style={s.divider} />
-
-        {/* TTS settings */}
-        <div style={s.section}>
-          <p style={s.sectionTitle}>TTS Settings</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={s.fieldGroup}>
-              <label style={s.label}>ElevenLabs Model</label>
+            {/* ElevenLabs model */}
+            <div style={s.field}>
+              <label style={s.label}>ElevenLabs model</label>
               <select
                 value={cfg.el_config.model_id}
                 onChange={(e) => patchEl({ model_id: e.target.value })}
@@ -466,65 +441,82 @@ export default function ConfigRail({ className }: ConfigRailProps) {
                 {EL_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             </div>
+          </div>
+        )}
 
-            {([
-              ['stability', 'Stability', 0, 1, 0.01],
-              ['similarity_boost', 'Similarity', 0, 1, 0.01],
-              ['style', 'Style exagg.', 0, 1, 0.01],
-              ['speed', 'Speed', 0.7, 1.2, 0.05],
-            ] as [keyof StudioConfig['el_config'], string, number, number, number][]).map(([key, label, min, max, step]) => (
-              <div key={key} style={s.fieldGroup}>
-                <label style={s.label}>{label}</label>
-                <div style={s.sliderRow}>
-                  <input
-                    type="range"
-                    min={min} max={max} step={step}
-                    value={cfg.el_config[key] as number}
-                    onChange={(e) => patchEl({ [key]: Number(e.target.value) } as Partial<StudioConfig['el_config']>)}
-                    style={{ flex: 1, accentColor: 'var(--amber)' }}
-                  />
-                  <span style={s.sliderVal}>
-                    {(cfg.el_config[key] as number).toFixed(2)}
-                  </span>
-                </div>
+        {/* ── Advanced tab ── */}
+        {tab === 'Advanced' && (
+          <div style={s.gap}>
+            {/* Show info */}
+            <div style={s.field}>
+              <label style={s.label}>Show name</label>
+              <input
+                type="text"
+                value={cfg.show_name}
+                onChange={(e) => patch({ show_name: e.target.value })}
+                placeholder="My Podcast"
+                style={s.input}
+              />
+            </div>
+            <div style={s.field}>
+              <label style={s.label}>Channel</label>
+              <input
+                type="text"
+                value={cfg.channel_name}
+                onChange={(e) => patch({ channel_name: e.target.value })}
+                placeholder="@mychannel"
+                style={s.input}
+              />
+            </div>
+
+            {/* TTS sliders */}
+            <div style={s.field}>
+              <label style={{ ...s.label, marginBottom: '0.625rem' }}>TTS voice settings</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                {([
+                  ['stability', 'Stability', 0, 1, 0.01],
+                  ['similarity_boost', 'Similarity', 0, 1, 0.01],
+                  ['style', 'Style exagg.', 0, 1, 0.01],
+                  ['speed', 'Speed', 0.7, 1.2, 0.05],
+                ] as [keyof StudioConfig['el_config'], string, number, number, number][]).map(
+                  ([key, label, min, max, step]) => (
+                    <div key={key}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--t2)' }}>{label}</span>
+                        <span style={s.sliderVal}>
+                          {(cfg.el_config[key] as number).toFixed(2)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={min} max={max} step={step}
+                        value={cfg.el_config[key] as number}
+                        onChange={(e) => patchEl({ [key]: Number(e.target.value) } as Partial<StudioConfig['el_config']>)}
+                        style={{ width: '100%', accentColor: 'var(--amber)' }}
+                      />
+                    </div>
+                  )
+                )}
               </div>
-            ))}
+            </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {/* Speaker boost */}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
               <input
                 type="checkbox"
-                id="speakerBoost"
                 checked={cfg.el_config.use_speaker_boost}
                 onChange={(e) => patchEl({ use_speaker_boost: e.target.checked })}
-                style={{ accentColor: 'var(--amber)', width: '14px', height: '14px' }}
+                style={{ accentColor: 'var(--amber)', width: '14px', height: '14px', flexShrink: 0 }}
               />
-              <label htmlFor="speakerBoost" style={{ fontSize: '0.8125rem', color: 'var(--t2)', cursor: 'pointer' }}>
-                Speaker boost
-              </label>
-            </div>
+              <span style={{ fontSize: '0.8125rem', color: 'var(--t2)' }}>Speaker boost</span>
+            </label>
           </div>
-        </div>
-
-        <div style={s.divider} />
-
-        {/* Text model */}
-        <div style={{ ...s.section, marginBottom: '5rem' }}>
-          <p style={s.sectionTitle}>Text Model</p>
-          <div style={s.fieldGroup}>
-            <select
-              value={cfg.text_model}
-              onChange={(e) => patch({ text_model: e.target.value })}
-              style={s.select}
-            >
-              {TEXT_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </select>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Sticky Generate button */}
       <div style={{
-        padding: '0.75rem 1rem',
+        padding: '0.75rem 0.875rem',
         borderTop: '1px solid var(--bd)',
         backgroundColor: 'var(--bg1)',
         flexShrink: 0,
@@ -532,10 +524,10 @@ export default function ConfigRail({ className }: ConfigRailProps) {
         {state.error && (
           <p style={{
             fontSize: '0.75rem', color: '#E5534B',
-            backgroundColor: 'rgba(229,83,75,0.1)',
-            border: '1px solid rgba(229,83,75,0.25)',
+            backgroundColor: 'rgba(229,83,75,0.08)',
+            border: '1px solid rgba(229,83,75,0.2)',
             borderRadius: '4px', padding: '0.375rem 0.5rem',
-            marginBottom: '0.5rem',
+            marginBottom: '0.5rem', lineHeight: 1.4,
           }}>
             {state.error}
           </p>
@@ -550,14 +542,13 @@ export default function ConfigRail({ className }: ConfigRailProps) {
               ? 'var(--bg3)' : 'var(--accent)',
             border: 'none',
             borderRadius: '6px',
-            color: state.isGeneratingOutline || !cfg.topic.trim()
-              ? 'var(--t3)' : '#fff',
+            color: state.isGeneratingOutline || !cfg.topic.trim() ? 'var(--t3)' : '#fff',
             fontSize: '0.875rem',
             fontWeight: 600,
             cursor: state.isGeneratingOutline || !cfg.topic.trim() ? 'default' : 'pointer',
           }}
         >
-          {state.isGeneratingOutline ? 'Generating outline…' : state.outline ? 'Regenerate outline' : 'Generate outline'}
+          {state.isGeneratingOutline ? 'Generating…' : state.outline ? 'Regenerate outline' : 'Generate outline'}
         </button>
       </div>
     </aside>

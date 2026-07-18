@@ -5,8 +5,7 @@ import { clearToken } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 import { useStudio } from '@/lib/store'
 import ConfigRail from './ConfigRail'
-import PartGrid from './PartGrid'
-import PartExpanded from './PartExpanded'
+import PartList from './PartList'
 import HistoryPanel from './HistoryPanel'
 
 type Tab = 'studio' | 'history'
@@ -22,7 +21,6 @@ export default function StudioApp() {
   }
 
   const hasOutline = Boolean(state.outline)
-  const hasSelectedPart = state.selectedPart != null
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg0)' }}>
@@ -92,15 +90,8 @@ export default function StudioApp() {
             <ConfigRail />
 
             {/* Content area */}
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-              {hasOutline ? (
-                <>
-                  <PartGrid />
-                  {hasSelectedPart && <PartExpanded />}
-                </>
-              ) : (
-                <EmptyState />
-              )}
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+              {hasOutline ? <PartList /> : <EmptyState />}
             </div>
           </>
         )}
