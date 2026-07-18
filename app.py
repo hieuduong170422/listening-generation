@@ -51,6 +51,7 @@ pages = {
     "🎧 Podcast Studio": [
         st.Page("views/podcast/unified_studio.py", title="Tạo Podcast (Unified)", icon="✨", url_path="podcast-unified"),
         st.Page("views/podcast/elevenlabs_studio.py", title="Podcast (ElevenLabs)", icon="🎧", url_path="podcast-elevenlabs"),
+        st.Page("views/podcast/elevenlabs_history.py", title="ElevenLabs History", icon="📜", url_path="elevenlabs-history"),
         st.Page("views/podcast/tts_settings.py", title="Cài đặt TTS", icon="⚙️", url_path="tts-settings"),
     ],
     "🧩 Prompt Template Engine": [
