@@ -54,6 +54,17 @@ export type T = {
   writingPart: string
   batchFailedAt: string
   allScriptsDone: string
+  downloadAll: string
+  downloadOne: string
+  downloadingAudio: string
+  outlineHistoryTitle: string
+  outlineHistoryNote: string
+  outlineHistoryEmpty: string
+  colTopic: string
+  colDate: string
+  colParts: string
+  openBtn: string
+  deleteBtn: string
   renderAudio: string
   reRender: string
   writing: string
@@ -122,6 +133,17 @@ const vi: T = {
   writingPart: 'Đang viết phần',
   batchFailedAt: 'Lỗi khi tạo phần',
   allScriptsDone: 'Đã có đủ script cho tất cả các phần',
+  downloadAll: '⬇ Tải tất cả audio',
+  downloadOne: '⬇ Tải audio',
+  downloadingAudio: 'Đang tải…',
+  outlineHistoryTitle: 'Dàn ý đã tạo (7 ngày gần nhất)',
+  outlineHistoryNote: 'Dữ liệu lưu trên trình duyệt này, tự xoá sau 7 ngày.',
+  outlineHistoryEmpty: 'Chưa có dàn ý nào được lưu.',
+  colTopic: 'Chủ đề',
+  colDate: 'Cập nhật',
+  colParts: 'Phần / Script / Audio',
+  openBtn: 'Mở',
+  deleteBtn: 'Xoá',
   renderAudio: '▶ Tạo audio',
   reRender: '↺ Tạo lại',
   writing: 'Đang viết…',
@@ -190,6 +212,17 @@ const en: T = {
   writingPart: 'Writing part',
   batchFailedAt: 'Failed at part',
   allScriptsDone: 'All parts already have scripts',
+  downloadAll: '⬇ Download all audio',
+  downloadOne: '⬇ Download audio',
+  downloadingAudio: 'Downloading…',
+  outlineHistoryTitle: 'Generated outlines (last 7 days)',
+  outlineHistoryNote: 'Stored in this browser, auto-deleted after 7 days.',
+  outlineHistoryEmpty: 'No saved outlines yet.',
+  colTopic: 'Topic',
+  colDate: 'Updated',
+  colParts: 'Parts / Scripts / Audio',
+  openBtn: 'Open',
+  deleteBtn: 'Delete',
   renderAudio: '▶ Render audio',
   reRender: '↺ Re-render',
   writing: 'Writing…',

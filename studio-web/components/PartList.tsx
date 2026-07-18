@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStudio } from '@/lib/store'
 import { useLang } from '@/lib/lang'
-import { generateScript, renderAudio, fetchAudioBlobUrl, ApiError } from '@/lib/api'
+import { generateScript, renderAudio, fetchAudioBlobUrl, downloadAudioFile, ApiError } from '@/lib/api'
 import type { PartBrief } from '@/lib/types'
 
 function PartItem({ part }: { part: PartBrief }) {
@@ -21,6 +21,7 @@ function PartItem({ part }: { part: PartBrief }) {
   const [localScript, setLocalScript] = useState(scriptText)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [audioLoading, setAudioLoading] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const prevAudioRef = useRef<string | null>(null)
 
   useEffect(() => { setLocalScript(scriptText) }, [scriptText])
@@ -89,6 +90,19 @@ function PartItem({ part }: { part: PartBrief }) {
   function handleScriptChange(text: string) {
     setLocalScript(text)
     dispatch({ type: 'SET_SCRIPT', partIndex: part.index, text })
+  }
+
+  async function handleDownloadAudio() {
+    const aid = audioIds[part.index]
+    if (!aid || downloading) return
+    setDownloading(true)
+    try {
+      await downloadAudioFile(aid, `part-${String(part.index).padStart(2, '0')}`)
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', message: err instanceof ApiError ? err.message : 'Download failed' })
+    } finally {
+      setDownloading(false)
+    }
   }
 
   const busy = isGenerating || isRendering
@@ -275,6 +289,23 @@ function PartItem({ part }: { part: PartBrief }) {
             >
               {isRendering ? t.rendering : hasAudio ? t.reRender : t.renderAudio}
             </button>
+            {hasAudio && (
+              <button
+                onClick={handleDownloadAudio}
+                disabled={downloading}
+                title={t.downloadOne}
+                style={{
+                  flexShrink: 0, padding: '0.5rem 0.75rem',
+                  backgroundColor: 'var(--bg3)',
+                  border: '1px solid var(--bd)', borderRadius: '6px',
+                  color: downloading ? 'var(--t3)' : 'var(--t2)',
+                  fontSize: '0.8125rem', fontWeight: 600,
+                  cursor: downloading ? 'default' : 'pointer',
+                }}
+              >
+                {downloading ? t.downloadingAudio : t.downloadOne}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -288,6 +319,7 @@ export default function PartList() {
   const { outline, scripts, audioIds, config, generatingScript } = state
 
   const [batchRunning, setBatchRunning] = useState(false)
+  const [downloadingAll, setDownloadingAll] = useState(false)
   const cancelRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -345,6 +377,28 @@ export default function PartList() {
     abortRef.current?.abort()
   }
 
+  async function handleDownloadAll() {
+    if (!outline || downloadingAll) return
+    setDownloadingAll(true)
+    let failed = 0
+    try {
+      for (const part of outline.parts) {
+        const aid = audioIds[part.index]
+        if (!aid) continue
+        try {
+          await downloadAudioFile(aid, `part-${String(part.index).padStart(2, '0')}`)
+        } catch {
+          failed += 1 // audio có thể đã mất sau khi server restart — bỏ qua part này
+        }
+      }
+      if (failed > 0) {
+        dispatch({ type: 'SET_ERROR', message: `${failed} audio không tải được (có thể đã mất sau khi server restart)` })
+      }
+    } finally {
+      setDownloadingAll(false)
+    }
+  }
+
   return (
     <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       {/* Outline header */}
@@ -366,6 +420,24 @@ export default function PartList() {
 
         {/* Batch actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+          {doneAudio > 0 && (
+            <button
+              onClick={handleDownloadAll}
+              disabled={downloadingAll}
+              style={{
+                padding: '0.4375rem 0.875rem',
+                backgroundColor: 'var(--amber-m)',
+                border: '1px solid var(--amber)',
+                borderRadius: '6px',
+                color: downloadingAll ? 'var(--t3)' : 'var(--amber)',
+                fontSize: '0.8125rem', fontWeight: 600,
+                cursor: downloadingAll ? 'default' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {downloadingAll ? t.downloadingAudio : `${t.downloadAll} (${doneAudio})`}
+            </button>
+          )}
           {batchRunning && generatingScript !== null && (
             <span style={{
               fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600,

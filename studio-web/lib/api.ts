@@ -198,6 +198,23 @@ export async function fetchAudioBlobUrl(audioId: string): Promise<string> {
   return URL.createObjectURL(blob)
 }
 
+/** Tải audio của 1 part về máy dưới tên `baseName.<ext>` (ext theo content-type). */
+export async function downloadAudioFile(audioId: string, baseName: string): Promise<void> {
+  const res = await authFetch(`/api/podcast/audio/${audioId}`)
+  const blob = await res.blob()
+  const ext = blob.type.includes('mpeg') || blob.type.includes('mp3')
+    ? '.mp3'
+    : blob.type.includes('wav') ? '.wav' : '.audio'
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${baseName}${ext}`
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 // ── Suggest topics ────────────────────────────────────────────────────────────
 
 export async function suggestTopics(params: {
