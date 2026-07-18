@@ -141,6 +141,38 @@ def generate_script(client: genai.Client, topic: str, style_key: str, text_model
     return Script(topic=topic, style=style_key, lines=lines)
 
 
+def _cues_block(use_audio_tags: bool) -> str:
+    """Hướng dẫn cảm xúc: audio tags cho Eleven v3, từ tượng thanh cho model v2."""
+    if use_audio_tags:
+        return (
+            "EMOTIONAL DELIVERY — ELEVENLABS V3 AUDIO TAGS (IMPORTANT):\n"
+            "The TTS engine understands bracketed audio tags that control emotion and delivery. "
+            "Insert them INLINE right where the emotion happens. Tags are ALWAYS English, in square "
+            "brackets, regardless of the dialogue language. Use them naturally and sparingly "
+            "(roughly 1 tag every 2-4 lines — do not tag every line):\n"
+            "- Laughter: [laughs], [chuckles], [giggles] — NEVER write 'Ha ha' / 'Haha', use a tag instead.\n"
+            "- Breath & pauses: [sighs], [exhales], [short pause]\n"
+            "- Emotion: [excited], [curious], [surprised], [whispers], [sarcastic], [warmly]\n"
+            "- Reactions: [gasps], [laughs softly]\n"
+            "Example: Speaker2: [laughs] That's exactly what happened to me... [sighs] I still can't believe it.\n"
+            "Punctuation still matters: '...' for trailing thoughts, '?' and '!' for intonation.\n"
+            "DO NOT invent unusual tags. DO NOT use parentheses or asterisks — square brackets only.\n\n"
+        )
+    return (
+        "NATURAL CONVERSATION CUES (IMPORTANT for audio realism):\n"
+        "Sprinkle these to make the dialogue feel alive. Write them as actual SPOKEN words inside the line, "
+        "NOT as stage directions in brackets/asterisks. The TTS will pronounce them naturally:\n"
+        "- Laughter: 'Ha ha!', 'Haha, yeah.', 'Hehe.'\n"
+        "- Thinking / pause: 'Hmm...', 'Uh...', 'Well...', 'Let me think...'\n"
+        "- Surprise: 'Oh!', 'Wow.', 'Whoa, really?', 'No way.'\n"
+        "- Agreement: 'Mm-hmm.', 'Right, right.', 'Yeah, exactly.'\n"
+        "- Sigh / breath out: 'Phew.', 'Ahh.', 'Oof.'\n"
+        "- Trailing thought: use '...' (three dots) for natural pauses inside or at end of a sentence.\n"
+        "- Genuine reactions when the other host says something good or surprising.\n"
+        "DO NOT use bracketed stage directions like (laughs), [sighs], *chuckles* — those get stripped and waste tokens.\n\n"
+    )
+
+
 def generate_part_script(
     client: genai.Client,
     topic: str,
@@ -164,6 +196,7 @@ def generate_part_script(
     num_speakers: int = 2,
     host_names: tuple[str, ...] = (),
     language: str = DEFAULT_LANGUAGE,
+    use_audio_tags: bool = False,
     usage_store: list | None = None,
 ) -> Script:
     if style_key not in STYLES:
@@ -361,17 +394,7 @@ def generate_part_script(
         "- Keep turns short (1-3 sentences). Do not let one host monologue.\n"
         f"- {outro_rule}\n"
         "- Do NOT repeat material already covered in previous parts.\n\n"
-        "NATURAL CONVERSATION CUES (IMPORTANT for audio realism):\n"
-        "Sprinkle these to make the dialogue feel alive. Write them as actual SPOKEN words inside the line, "
-        "NOT as stage directions in brackets/asterisks. The TTS will pronounce them naturally:\n"
-        "- Laughter: 'Ha ha!', 'Haha, yeah.', 'Hehe.'\n"
-        "- Thinking / pause: 'Hmm...', 'Uh...', 'Well...', 'Let me think...'\n"
-        "- Surprise: 'Oh!', 'Wow.', 'Whoa, really?', 'No way.'\n"
-        "- Agreement: 'Mm-hmm.', 'Right, right.', 'Yeah, exactly.'\n"
-        "- Sigh / breath out: 'Phew.', 'Ahh.', 'Oof.'\n"
-        "- Trailing thought: use '...' (three dots) for natural pauses inside or at end of a sentence.\n"
-        "- Genuine reactions when the other host says something good or surprising.\n"
-        "DO NOT use bracketed stage directions like (laughs), [sighs], *chuckles* — those get stripped and waste tokens.\n\n"
+        f"{_cues_block(use_audio_tags)}"
         "OUTPUT LANGUAGE (HARD RULE — REPEAT):\n"
         f"Every line MUST be 100% in {language_label}. Do NOT mix in any other language anywhere — "
         "not even greetings, names of concepts, or filler words. The host names provided are written "

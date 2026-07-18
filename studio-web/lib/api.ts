@@ -157,6 +157,7 @@ export async function generateScript(params: {
     num_speakers: config.num_speakers,
     host_names: config.host_names,
     language: config.language,
+    use_audio_tags: config.el_config.model_id.startsWith('eleven_v3'),
     previous_scripts: previousScripts,
   }
   const res = await authFetch('/api/podcast/script', {

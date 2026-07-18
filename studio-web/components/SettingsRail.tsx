@@ -8,6 +8,7 @@ const EL_MODELS = [
   { value: 'eleven_flash_v2_5', label: 'Flash v2.5' },
   { value: 'eleven_multilingual_v2', label: 'Multilingual v2' },
   { value: 'eleven_turbo_v2_5', label: 'Turbo v2.5' },
+  { value: 'eleven_v3', label: 'Eleven v3 (cảm xúc)' },
 ]
 
 const TEXT_MODELS = [

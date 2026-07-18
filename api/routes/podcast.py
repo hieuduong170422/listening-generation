@@ -67,6 +67,8 @@ class ScriptRequest(BaseModel):
     num_speakers: int = Field(default=2, ge=1, le=9)
     host_names: list[str] = []
     language: str = "en"
+    # True khi render bằng Eleven v3 — script sẽ chèn audio tags [laughs]...
+    use_audio_tags: bool = False
     # Keys are part indices as strings; values are the readable script text
     previous_scripts: dict[str, str] = {}
 
@@ -264,6 +266,7 @@ async def generate_script(
                 num_speakers=body.num_speakers,
                 host_names=tuple(body.host_names),
                 language=body.language,
+                use_audio_tags=body.use_audio_tags,
                 usage_store=None,
             ),
         )

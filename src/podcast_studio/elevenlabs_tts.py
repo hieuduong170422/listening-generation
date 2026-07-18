@@ -129,6 +129,13 @@ def _output_extension(fmt: str) -> str:
 
 
 def _voice_settings(config: dict) -> dict:
+    model_id = config.get("model_id", "")
+    if model_id.startswith("eleven_v3"):
+        # Eleven v3 chỉ nhận stability rời rạc (0.0 creative / 0.5 natural / 1.0 robust);
+        # style/speed/similarity không được hỗ trợ — gửi lên sẽ bị 400.
+        raw = float(config.get("stability", 0.5))
+        snapped = min((0.0, 0.5, 1.0), key=lambda v: abs(v - raw))
+        return {"stability": snapped}
     return {k: config[k] for k in _VOICE_SETTING_KEYS if k in config}
 
 
