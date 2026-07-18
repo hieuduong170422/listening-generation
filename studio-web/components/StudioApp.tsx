@@ -111,7 +111,7 @@ export default function StudioApp() {
   const hasOutline = Boolean(state.outline)
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg0)' }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg0)', overflow: 'hidden' }}>
       {/* Top bar */}
       <header style={{
         height: '50px', backgroundColor: 'var(--bg1)',

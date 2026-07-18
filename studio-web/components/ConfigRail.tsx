@@ -140,8 +140,9 @@ export default function ConfigRail() {
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
+      minHeight: 0,
     }}>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 0.75rem 0.5rem' }}>
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '0.75rem 0.75rem 0.5rem' }}>
         <div style={s.gap}>
 
           {/* Topic */}
