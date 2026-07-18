@@ -133,7 +133,7 @@ export default function ConfigRail() {
 
   return (
     <aside style={{
-      width: '248px',
+      width: '496px',
       flexShrink: 0,
       backgroundColor: 'var(--bg1)',
       borderRight: '1px solid var(--bd)',
