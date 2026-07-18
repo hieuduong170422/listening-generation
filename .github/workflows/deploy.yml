@@ -53,7 +53,6 @@ jobs:
         id: changed
         run: |
           CHANGED=$(git diff --name-only HEAD~1 HEAD)
-          echo "files=$CHANGED" >> $GITHUB_OUTPUT
 
           # Rebuild Streamlit Docker nếu requirements/Dockerfile thay đổi
           if echo "$CHANGED" | grep -qE '^(Dockerfile|requirements\.txt)$'; then
