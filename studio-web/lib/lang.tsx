@@ -4,15 +4,74 @@ import { createContext, useContext, useState, type ReactNode } from 'react'
 
 export type Lang = 'vi' | 'en'
 
-const vi = {
-  // Header
+export type T = {
+  studioTitle: string
+  studio: string
+  history: string
+  signOut: string
+  langLabel: string
+  topic: string
+  topicPlaceholder: string
+  suggestTopics: string
+  suggesting: string
+  language: string
+  style: string
+  audience: string
+  tone: string
+  parts: string
+  minPerPart: string
+  speakers: string
+  solo: string
+  duo: string
+  speakerNamePlaceholder: string
+  selectVoice: string
+  loadingVoices: string
+  generateOutline: string
+  regenerateOutline: string
+  generatingOutline: string
+  showName: string
+  showNamePlaceholder: string
+  channel: string
+  channelPlaceholder: string
+  continuousNarrative: string
+  textModel: string
+  elevenlabsModel: string
+  ttsVoice: string
+  stability: string
+  similarity: string
+  styleExagg: string
+  speed: string
+  speakerBoost: string
+  scriptsBadge: string
+  audioBadge: string
+  scriptLabel: string
+  chars: string
+  genScript: string
+  regenScript: string
+  renderAudio: string
+  reRender: string
+  writing: string
+  rendering: string
+  keyPoints: string
+  loadingAudio: string
+  scriptPlaceholder: string
+  writingPlaceholder: string
+  partsLabel: string
+  minLabel: string
+  noOutlineYet: string
+  noOutlineHint: string
+  generateLink: string
+  quotaTitle: string
+  noHistory: string
+  loading: string
+}
+
+const vi: T = {
   studioTitle: 'Podcast Studio',
   studio: 'Studio',
   history: 'Lịch sử',
   signOut: 'Đăng xuất',
   langLabel: 'EN',
-
-  // Left rail
   topic: 'Chủ đề',
   topicPlaceholder: 'Tập này nói về chủ đề gì?',
   suggestTopics: '✦ Gợi ý chủ đề',
@@ -32,8 +91,6 @@ const vi = {
   generateOutline: 'Tạo dàn ý',
   regenerateOutline: 'Tạo lại dàn ý',
   generatingOutline: 'Đang tạo…',
-
-  // Right rail
   showName: 'Tên chương trình',
   showNamePlaceholder: 'Podcast của tôi',
   channel: 'Kênh',
@@ -47,8 +104,6 @@ const vi = {
   styleExagg: 'Cá tính',
   speed: 'Tốc độ',
   speakerBoost: 'Tăng cường giọng',
-
-  // Part list
   scriptsBadge: 'script',
   audioBadge: 'audio',
   scriptLabel: 'Script',
@@ -65,25 +120,20 @@ const vi = {
   writingPlaceholder: 'Đang viết script…',
   partsLabel: 'phần',
   minLabel: 'phút',
-
-  // Empty state
   noOutlineYet: 'Chưa có dàn ý',
   noOutlineHint: 'Nhập chủ đề bên trái và nhấn',
   generateLink: 'Tạo dàn ý',
-
-  // History
   quotaTitle: 'Hạn mức ElevenLabs',
   noHistory: 'Chưa có lịch sử',
   loading: 'Đang tải…',
-} as const
+}
 
-const en: typeof vi = {
+const en: T = {
   studioTitle: 'Podcast Studio',
   studio: 'Studio',
   history: 'History',
   signOut: 'Sign out',
   langLabel: 'VI',
-
   topic: 'Topic',
   topicPlaceholder: 'What is this episode about?',
   suggestTopics: '✦ Suggest topics',
@@ -103,7 +153,6 @@ const en: typeof vi = {
   generateOutline: 'Generate outline',
   regenerateOutline: 'Regenerate outline',
   generatingOutline: 'Generating…',
-
   showName: 'Show name',
   showNamePlaceholder: 'My Podcast',
   channel: 'Channel',
@@ -117,7 +166,6 @@ const en: typeof vi = {
   styleExagg: 'Style exagg.',
   speed: 'Speed',
   speakerBoost: 'Speaker boost',
-
   scriptsBadge: 'scripts',
   audioBadge: 'audio',
   scriptLabel: 'Script',
@@ -134,17 +182,13 @@ const en: typeof vi = {
   writingPlaceholder: 'Writing script…',
   partsLabel: 'parts',
   minLabel: 'min',
-
   noOutlineYet: 'No outline yet',
   noOutlineHint: 'Enter a topic on the left and click',
   generateLink: 'Generate outline',
-
   quotaTitle: 'ElevenLabs Quota',
   noHistory: 'No history yet',
   loading: 'Loading…',
 }
-
-export type T = typeof vi
 
 const translations: Record<Lang, T> = { vi, en }
 
