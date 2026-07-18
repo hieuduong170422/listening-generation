@@ -83,8 +83,9 @@ async def lifespan(app: FastAPI):
         log.info("Gemini client initialised via API key …%s", api_key[-4:])
     else:
         log.warning(
-            "Neither GEMINI_API_KEY nor Vertex AI is configured. "
-            "Requests that call Gemini will fail at runtime."
+            "Neither GEMINI_API_KEY nor GOOGLE_GENAI_USE_VERTEXAI is configured. "
+            "Requests that call Gemini will fail at runtime. "
+            "Set GEMINI_API_KEY or enable GOOGLE_GENAI_USE_VERTEXAI=true with GOOGLE_CLOUD_PROJECT."
         )
         client = None  # type: ignore[assignment]
 
@@ -94,7 +95,7 @@ async def lifespan(app: FastAPI):
 
 
 def _build_vertex_credentials():
-    """Build GCP service account credentials without Streamlit."""
+    """Build GCP service account credentials for Vertex AI."""
     import json
 
     from google.oauth2 import service_account
@@ -107,10 +108,18 @@ def _build_vertex_credentials():
         return service_account.Credentials.from_service_account_info(info, scopes=_SCOPES)
 
     path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-    if path and Path(path).exists():
-        return service_account.Credentials.from_service_account_file(path, scopes=_SCOPES)
+    if path:
+        resolved = Path(path) if Path(path).is_absolute() else _ROOT / path
+        if resolved.exists():
+            return service_account.Credentials.from_service_account_file(
+                str(resolved), scopes=_SCOPES
+            )
+        else:
+            log.warning("GOOGLE_APPLICATION_CREDENTIALS path not found: %s", resolved)
 
     return None  # Fallback to ADC (works locally with `gcloud auth application-default login`)
+
+
 
 
 # ---------------------------------------------------------------------------
