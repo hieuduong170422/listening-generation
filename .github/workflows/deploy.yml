@@ -22,12 +22,13 @@ jobs:
       - name: Deploy GCP service account key
         run: |
           echo "${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}" | base64 -d | \
-            ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 \
+            ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
             "mkdir -p /opt/audivy/secrets && cat > /opt/audivy/secrets/gen-lang-client-0454656089-bd7514706035.json && chmod 600 /opt/audivy/secrets/gen-lang-client-0454656089-bd7514706035.json"
 
       - name: Update .env on server
         run: |
-          echo "${{ secrets.ENV_FILE }}" | ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 "cat > /opt/audivy/.env"
+          echo "${{ secrets.ENV_FILE }}" | ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
+            "cat > /opt/audivy/.env"
 
       - name: Sync code to server
         run: |
@@ -43,27 +44,57 @@ jobs:
             --exclude='.venv/' \
             --exclude='*.db' \
             --exclude='*.wav' \
-            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            --exclude='studio-web/node_modules/' \
+            --exclude='studio-web/.next/' \
+            -e "ssh -i ~/.ssh/id_ed25519" \
             ./ root@34.124.248.163:/opt/audivy/
 
-      - name: Check if rebuild needed
-        id: check_rebuild
+      - name: Check what changed
+        id: changed
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^(Dockerfile|requirements\.txt)$' || true)
-          if [ -n "$CHANGED" ]; then
-            echo "rebuild=true" >> $GITHUB_OUTPUT
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          echo "files=$CHANGED" >> $GITHUB_OUTPUT
+
+          # Rebuild Streamlit Docker nếu requirements/Dockerfile thay đổi
+          if echo "$CHANGED" | grep -qE '^(Dockerfile|requirements\.txt)$'; then
+            echo "rebuild_streamlit=true" >> $GITHUB_OUTPUT
           else
-            echo "rebuild=false" >> $GITHUB_OUTPUT
+            echo "rebuild_streamlit=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Rebuild + deploy (deps changed)
-        if: steps.check_rebuild.outputs.rebuild == 'true'
-        run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 \
-            "cd /opt/audivy && docker compose build && docker compose up -d"
+          # Rebuild API nếu api/ hoặc requirements-api.txt thay đổi
+          if echo "$CHANGED" | grep -qE '^(api/Dockerfile|requirements-api\.txt|api/)'; then
+            echo "rebuild_api=true" >> $GITHUB_OUTPUT
+          else
+            echo "rebuild_api=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Deploy (code/env change)
-        if: steps.check_rebuild.outputs.rebuild == 'false'
+          # Rebuild studio-web nếu studio-web/ thay đổi
+          if echo "$CHANGED" | grep -qE '^studio-web/'; then
+            echo "rebuild_web=true" >> $GITHUB_OUTPUT
+          else
+            echo "rebuild_web=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Rebuild Streamlit (if needed)
+        if: steps.changed.outputs.rebuild_streamlit == 'true'
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@34.124.248.163 \
+          ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
+            "cd /opt/audivy && docker compose build streamlit"
+
+      - name: Rebuild API (if needed)
+        if: steps.changed.outputs.rebuild_api == 'true'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
+            "cd /opt/audivy && docker compose build podcast-api"
+
+      - name: Rebuild studio-web (if needed)
+        if: steps.changed.outputs.rebuild_web == 'true'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
+            "cd /opt/audivy && docker compose build studio-web"
+
+      - name: Deploy all services
+        run: |
+          ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
             "cd /opt/audivy && docker compose up -d"
