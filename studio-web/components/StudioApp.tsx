@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { clearToken } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 import { useStudio } from '@/lib/store'
@@ -11,6 +11,91 @@ import PartList from './PartList'
 import HistoryPanel from './HistoryPanel'
 
 type Tab = 'studio' | 'history'
+
+const TOOLS = [
+  { icon: '🧩', label: 'Prompt Template', href: '/templates' },
+  { icon: '📊', label: 'Kalodata', href: '/kalodata-products' },
+  { icon: '🎬', label: 'Video Affiliate', href: '/affiliate' },
+  { icon: '🛡️', label: 'Admin', href: '/admin' },
+]
+
+function ToolsMenu({ label }: { label: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          padding: '0.3125rem 0.6875rem',
+          backgroundColor: open ? 'var(--bg3)' : 'transparent',
+          border: `1px solid ${open ? 'var(--bd)' : 'transparent'}`,
+          borderRadius: '5px',
+          color: open ? 'var(--t1)' : 'var(--t2)',
+          fontSize: '0.8125rem',
+          fontWeight: open ? 600 : 400,
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '0.25rem',
+          transition: 'color 0.15s',
+        }}
+      >
+        {label}
+        <span style={{
+          fontSize: '0.625rem', color: 'var(--t3)',
+          transform: open ? 'rotate(180deg)' : 'none',
+          transition: 'transform 0.15s',
+          display: 'inline-block',
+        }}>▾</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0,
+          backgroundColor: 'var(--bg2)',
+          border: '1px solid var(--bd)',
+          borderRadius: '7px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+          minWidth: '200px',
+          zIndex: 100,
+          overflow: 'hidden',
+          padding: '0.25rem',
+        }}>
+          {TOOLS.map((tool) => (
+            <a
+              key={tool.href}
+              href={tool.href}
+              onClick={() => setOpen(false)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.625rem',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '5px',
+                color: 'var(--t1)',
+                fontSize: '0.8125rem',
+                textDecoration: 'none',
+                transition: 'background-color 0.1s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg3)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+            >
+              <span style={{ fontSize: '1rem', width: '20px', textAlign: 'center' }}>{tool.icon}</span>
+              <span>{tool.label}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function StudioApp() {
   const router = useRouter()
@@ -63,6 +148,8 @@ export default function StudioApp() {
               )
             })}
           </nav>
+
+          <ToolsMenu label={t.tools} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

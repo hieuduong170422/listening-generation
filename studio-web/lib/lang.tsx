@@ -10,6 +10,7 @@ export type T = {
   history: string
   signOut: string
   langLabel: string
+  tools: string
   topic: string
   topicPlaceholder: string
   suggestTopics: string
@@ -72,6 +73,7 @@ const vi: T = {
   history: 'Lịch sử',
   signOut: 'Đăng xuất',
   langLabel: 'EN',
+  tools: 'Công cụ',
   topic: 'Chủ đề',
   topicPlaceholder: 'Tập này nói về chủ đề gì?',
   suggestTopics: '✦ Gợi ý chủ đề',
@@ -134,6 +136,7 @@ const en: T = {
   history: 'History',
   signOut: 'Sign out',
   langLabel: 'VI',
+  tools: 'Tools',
   topic: 'Topic',
   topicPlaceholder: 'What is this episode about?',
   suggestTopics: '✦ Suggest topics',
