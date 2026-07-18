@@ -150,6 +150,23 @@ export default function StudioApp() {
           </nav>
 
           <ToolsMenu label={t.tools} />
+
+          <a
+            href="/affiliate"
+            style={{
+              padding: '0.3125rem 0.6875rem',
+              backgroundColor: 'var(--amber-m)',
+              border: '1px solid var(--amber)',
+              borderRadius: '5px',
+              color: 'var(--amber)',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              textDecoration: 'none',
+              display: 'flex', alignItems: 'center', gap: '0.3rem',
+            }}
+          >
+            🎬 Affiliate
+          </a>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
