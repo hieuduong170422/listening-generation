@@ -1,10 +1,20 @@
-"""FastAPI auth module — in-memory token store, no Streamlit dependency."""
+"""FastAPI auth module — token store trong SQLite.
+
+Dùng SQLite thay vì dict in-memory vì:
+- Production chạy uvicorn --workers 2: mỗi worker một process, dict riêng
+  → login ở worker A, request sau rơi vào worker B là 401 ngẫu nhiên.
+- Restart/deploy không làm mất phiên đăng nhập (volume audivy_history).
+Chỉ lưu SHA-256 hash của token, không lưu token thô.
+"""
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import secrets
+import sqlite3
 import time
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Header, HTTPException, status
@@ -14,8 +24,26 @@ log = logging.getLogger(__name__)
 # Token sống 2 giờ — hết hạn buộc đăng nhập lại (đổi qua env TOKEN_TTL_SECONDS)
 TOKEN_TTL_SECONDS = int(os.getenv("TOKEN_TTL_SECONDS", str(2 * 3600)))
 
-# token → (username, expires_at epoch seconds)
-_TOKEN_STORE: dict[str, tuple[str, float]] = {}
+DB_PATH = Path(__file__).resolve().parent.parent / "history" / "auth_tokens.db"
+
+
+def _conn() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tokens (
+            token_hash TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            expires_at REAL NOT NULL
+        )
+        """
+    )
+    return conn
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def _allowed_users() -> set[str]:
@@ -45,7 +73,13 @@ def verify_login(username: str, password: str) -> bool:
 
 def create_token(username: str) -> str:
     token = secrets.token_hex(32)
-    _TOKEN_STORE[token] = (username.strip().lower(), time.time() + TOKEN_TTL_SECONDS)
+    now = time.time()
+    with _conn() as conn:
+        conn.execute("DELETE FROM tokens WHERE expires_at < ?", (now,))
+        conn.execute(
+            "INSERT INTO tokens (token_hash, username, expires_at) VALUES (?, ?, ?)",
+            (_hash_token(token), username.strip().lower(), now + TOKEN_TTL_SECONDS),
+        )
     log.info("Token created for user %r (TTL %ds)", username, TOKEN_TTL_SECONDS)
     return token
 
@@ -70,15 +104,21 @@ def get_current_user(authorization: Annotated[str | None, Header()] = None) -> s
             detail="Invalid Authorization header format. Expected: Bearer <token>",
         )
     token = parts[1].strip()
-    record = _TOKEN_STORE.get(token)
-    if not record:
+    token_hash = _hash_token(token)
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT username, expires_at FROM tokens WHERE token_hash = ?",
+            (token_hash,),
+        ).fetchone()
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
-    username, expires_at = record
+    username, expires_at = row
     if time.time() >= expires_at:
-        _TOKEN_STORE.pop(token, None)
+        with _conn() as conn:
+            conn.execute("DELETE FROM tokens WHERE token_hash = ?", (token_hash,))
         log.info("Token expired for user %r", username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

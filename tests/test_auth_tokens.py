@@ -1,4 +1,4 @@
-"""Tests cho token TTL trong api/auth.py."""
+"""Tests cho token store SQLite + TTL trong api/auth.py."""
 import sys
 import time
 from pathlib import Path
@@ -12,10 +12,8 @@ from api import auth  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def clean_store():
-    auth._TOKEN_STORE.clear()
-    yield
-    auth._TOKEN_STORE.clear()
+def temp_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth, "DB_PATH", tmp_path / "auth_tokens.db")
 
 
 class TestTokenLifecycle:
@@ -38,6 +36,19 @@ class TestTokenLifecycle:
             auth.get_current_user("Token abc")
         assert exc.value.status_code == 401
 
+    def test_raw_token_not_stored(self):
+        """DB chỉ chứa hash, không chứa token thô."""
+        token = auth.create_token("alice")
+        raw = auth.DB_PATH.read_bytes()
+        assert token.encode() not in raw
+
+    def test_survives_across_connections(self):
+        """Mô phỏng 2 worker: mỗi lần gọi là 1 connection SQLite riêng."""
+        token = auth.create_token("alice")
+        # get_current_user mở connection mới — như worker khác đọc
+        assert auth.get_current_user(f"Bearer {token}") == "alice"
+        assert auth.get_current_user(f"Bearer {token}") == "alice"
+
 
 class TestTokenExpiry:
     def test_token_expires_after_ttl(self, monkeypatch):
@@ -48,8 +59,9 @@ class TestTokenExpiry:
         with pytest.raises(HTTPException) as exc:
             auth.get_current_user(f"Bearer {token}")
         assert exc.value.status_code == 401
-        # Token hết hạn bị dọn khỏi store
-        assert token not in auth._TOKEN_STORE
+        # Gọi lại vẫn 401 (token đã bị xoá khỏi DB)
+        with pytest.raises(HTTPException):
+            auth.get_current_user(f"Bearer {token}")
 
     def test_token_still_valid_before_ttl(self, monkeypatch):
         token = auth.create_token("bob")
@@ -57,6 +69,16 @@ class TestTokenExpiry:
         # 1 giờ 59 phút sau
         monkeypatch.setattr(time, "time", lambda: real_time() + auth.TOKEN_TTL_SECONDS - 60)
         assert auth.get_current_user(f"Bearer {token}") == "bob"
+
+    def test_expired_tokens_pruned_on_create(self, monkeypatch):
+        auth.create_token("old-user")
+        real_time = time.time
+        monkeypatch.setattr(time, "time", lambda: real_time() + auth.TOKEN_TTL_SECONDS + 10)
+        auth.create_token("new-user")
+        import sqlite3
+        with sqlite3.connect(auth.DB_PATH) as conn:
+            usernames = [r[0] for r in conn.execute("SELECT username FROM tokens").fetchall()]
+        assert usernames == ["new-user"]
 
     def test_default_ttl_is_two_hours(self):
         assert auth.TOKEN_TTL_SECONDS == 2 * 3600
