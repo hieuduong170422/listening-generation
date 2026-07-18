@@ -94,28 +94,17 @@ export default function SettingsRail() {
     }}>
       <div style={s.gap}>
 
-        {/* Show info */}
+        {/* Channel */}
         <div>
-          <p style={s.section}>{t.showName}</p>
-          <div style={{ ...s.gap, gap: '0.5rem' }}>
-            <div style={s.field}>
-              <input
-                type="text"
-                value={cfg.show_name}
-                onChange={(e) => patch({ show_name: e.target.value })}
-                placeholder={t.showNamePlaceholder}
-                style={s.input}
-              />
-            </div>
-            <div style={s.field}>
-              <input
-                type="text"
-                value={cfg.channel_name}
-                onChange={(e) => patch({ channel_name: e.target.value })}
-                placeholder={t.channelPlaceholder}
-                style={s.input}
-              />
-            </div>
+          <p style={s.section}>{t.channel}</p>
+          <div style={s.field}>
+            <input
+              type="text"
+              value={cfg.channel_name}
+              onChange={(e) => patch({ channel_name: e.target.value })}
+              placeholder={t.channelPlaceholder}
+              style={s.input}
+            />
           </div>
         </div>
 

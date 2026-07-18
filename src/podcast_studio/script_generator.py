@@ -307,25 +307,23 @@ def generate_part_script(
         )
 
     branding_block = ""
-    if show_name or channel_name:
-        lines = ["BRANDING:"]
-        if show_name:
-            lines.append(f'- Show name: "{show_name}"')
-        if channel_name:
-            lines.append(f'- YouTube channel: "{channel_name}"')
-        if is_first and show_name:
+    if channel_name:
+        lines = ["BRANDING:", f'- Channel name: "{channel_name}"']
+        if is_first:
             lines.append(
-                f'- In the very first opening line, welcome listeners to "{show_name}" by name '
-                "(e.g. \"Welcome to {0}, I'm ...\"). Do this only once, only in this opening.".format(show_name)
+                f'- The very FIRST line MUST welcome listeners to "{channel_name}" by name and then '
+                f"introduce today's overall topic, e.g. \"Welcome to {channel_name}! "
+                "Today we're talking about ...\" (say it in the target language). "
+                "Do this only once, only in this opening."
             )
-        if is_last and channel_name:
+        if is_last:
             lines.append(
-                f'- In the final sign-off, thank listeners and invite them to subscribe to "{channel_name}" '
-                "on YouTube. Do this only once, only at the very end."
+                f'- In the final sign-off, thank listeners and invite them to subscribe to "{channel_name}". '
+                "Do this only once, only at the very end."
             )
         if not is_first and not is_last:
             lines.append(
-                "- This is a middle part: do NOT mention the show name or channel name. "
+                "- This is a middle part: do NOT mention the channel name. "
                 "The audience already heard it in Part 1."
             )
         branding_block = "\n".join(lines) + "\n\n"

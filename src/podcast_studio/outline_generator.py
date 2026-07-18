@@ -157,13 +157,8 @@ def generate_outline(
         else "Each part may be a standalone episode with its own intro and outro.\n\n"
     )
     branding_note = ""
-    if show_name or channel_name:
-        bits = []
-        if show_name:
-            bits.append(f'show "{show_name}"')
-        if channel_name:
-            bits.append(f'YouTube channel "{channel_name}"')
-        branding_note = f"This series belongs to the {' on '.join(bits)}.\n\n"
+    if channel_name:
+        branding_note = f'This series belongs to the YouTube channel "{channel_name}".\n\n'
     prompt = (
         f"You are planning a long-form language-learning podcast for a YouTube series. "
         f"TARGET LANGUAGE: {lang['label']} — the final spoken dialogue will be in {lang['label']}. "

@@ -125,7 +125,6 @@ export async function generateOutline(
     audience_level: config.audience_level,
     tone: config.tone,
     continuous: config.continuous,
-    show_name: config.show_name,
     channel_name: config.channel_name,
     language: config.language,
   }
@@ -154,7 +153,6 @@ export async function generateScript(params: {
     audience_level: config.audience_level,
     tone: config.tone,
     continuous: config.continuous,
-    show_name: config.show_name,
     channel_name: config.channel_name,
     num_speakers: config.num_speakers,
     host_names: config.host_names,

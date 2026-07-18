@@ -32,7 +32,6 @@ export interface ElConfig {
 export interface StudioConfig {
   topic: string
   language: string
-  show_name: string
   channel_name: string
   num_parts: number
   total_minutes: number
@@ -51,7 +50,6 @@ export interface StudioConfig {
 export const DEFAULT_CONFIG: StudioConfig = {
   topic: '',
   language: 'vi',
-  show_name: '',
   channel_name: '',
   num_parts: 3,
   total_minutes: 30,

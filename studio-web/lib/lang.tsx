@@ -30,8 +30,6 @@ export type T = {
   generateOutline: string
   regenerateOutline: string
   generatingOutline: string
-  showName: string
-  showNamePlaceholder: string
   channel: string
   channelPlaceholder: string
   continuousNarrative: string
@@ -115,9 +113,7 @@ const vi: T = {
   generateOutline: 'Tạo dàn ý',
   regenerateOutline: 'Tạo lại dàn ý',
   generatingOutline: 'Đang tạo…',
-  showName: 'Tên chương trình',
-  showNamePlaceholder: 'Podcast của tôi',
-  channel: 'Kênh',
+  channel: 'Tên kênh',
   channelPlaceholder: '@kenhcuatoi',
   continuousNarrative: 'Liên tục (không ngắt)',
   textModel: 'Mô hình AI',
@@ -200,9 +196,7 @@ const en: T = {
   generateOutline: 'Generate outline',
   regenerateOutline: 'Regenerate outline',
   generatingOutline: 'Generating…',
-  showName: 'Show name',
-  showNamePlaceholder: 'My Podcast',
-  channel: 'Channel',
+  channel: 'Channel name',
   channelPlaceholder: '@mychannel',
   continuousNarrative: 'Continuous narrative',
   textModel: 'Text model',
