@@ -59,14 +59,19 @@ export default function VoicePicker({ voices, value, onChange, loading, currentS
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const triggerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0, maxHeight: 320 })
 
   const selected = voices.find((v) => v.voice_id === value)
 
-  // Position dropdown below trigger
+  // Position dropdown — flip above if not enough space below
   function openDropdown() {
     const rect = triggerRef.current?.getBoundingClientRect()
-    if (rect) setPos({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 260) })
+    if (!rect) { setOpen(true); return }
+    const spaceBelow = window.innerHeight - rect.bottom - 8
+    const spaceAbove = rect.top - 8
+    const maxH = Math.min(360, Math.max(spaceBelow, spaceAbove) - 8)
+    const top = spaceBelow >= 200 ? rect.bottom + 4 : rect.top - Math.min(maxH, 360) - 4
+    setPos({ top, left: rect.left, width: Math.max(rect.width, 260), maxHeight: maxH })
     setOpen(true)
   }
 
@@ -165,9 +170,9 @@ export default function VoicePicker({ voices, value, onChange, loading, currentS
             top: pos.top, left: pos.left, width: pos.width,
             backgroundColor: 'var(--bg2)', border: '1px solid var(--bd)',
             borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-            zIndex: 9999, overflow: 'hidden',
+            zIndex: 9999,
             display: 'flex', flexDirection: 'column',
-            maxHeight: '360px',
+            maxHeight: pos.maxHeight,
           }}
         >
           {/* Search */}
@@ -205,8 +210,8 @@ export default function VoicePicker({ voices, value, onChange, loading, currentS
             </span>
           </div>
 
-          {/* Voice list */}
-          <div style={{ overflowY: 'auto', flex: 1 }}>
+          {/* Voice list — explicit overflow, no flex:1 */}
+          <div style={{ overflowY: 'scroll', flexShrink: 1, minHeight: 0 }}>
             {filtered.length === 0 && (
               <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.8125rem', color: 'var(--t3)' }}>
                 Không tìm thấy giọng nào
