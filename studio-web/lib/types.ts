@@ -62,7 +62,7 @@ export const DEFAULT_CONFIG: StudioConfig = {
   continuous: true,
   text_model: 'gemini-2.5-flash',
   num_speakers: 2,
-  host_names: ['Host A', 'Host B'],
+  host_names: ['Nam', 'Linh'],
   host_voices: ['', ''],
   el_config: {
     model_id: 'eleven_flash_v2_5',

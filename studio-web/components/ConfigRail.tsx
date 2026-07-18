@@ -140,8 +140,9 @@ export default function ConfigRail() {
       display: 'grid',
       gridTemplateRows: '1fr auto',
       height: 'calc(100vh - 50px)',
+      overflow: 'hidden',
     }}>
-      <div style={{ overflowY: 'auto', padding: '0.75rem 0.75rem 0.5rem' }}>
+      <div style={{ overflowY: 'auto', minWidth: 0, padding: '0.75rem 0.75rem 0.5rem' }}>
         <div style={s.gap}>
 
           {/* Topic */}
@@ -256,9 +257,7 @@ export default function ConfigRail() {
                 <button
                   key={n}
                   onClick={() => {
-                    const names = n === 1
-                      ? (lang === 'vi' ? ['Người dẫn'] : ['Host'])
-                      : (lang === 'vi' ? ['Người dẫn A', 'Người dẫn B'] : ['Host A', 'Host B'])
+                    const names = n === 1 ? ['Nam'] : ['Nam', 'Linh']
                     patch({ num_speakers: n, host_names: names, host_voices: Array(n).fill('') })
                   }}
                   style={{
@@ -326,6 +325,7 @@ export default function ConfigRail() {
         padding: '0.625rem 0.75rem',
         borderTop: '1px solid var(--bd)',
         backgroundColor: 'var(--bg1)',
+        minWidth: 0,
       }}>
         {state.error && (
           <p style={{
@@ -334,6 +334,7 @@ export default function ConfigRail() {
             border: '1px solid rgba(229,83,75,0.2)',
             borderRadius: '4px', padding: '0.3rem 0.45rem',
             marginBottom: '0.4rem', lineHeight: 1.4,
+            overflowWrap: 'anywhere', maxHeight: '9rem', overflowY: 'auto',
           }}>
             {state.error}
           </p>
