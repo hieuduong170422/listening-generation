@@ -35,8 +35,14 @@ function loadPersisted(): PersistedState | null {
     if (!data || typeof data !== 'object') return null
     // Dàn ý phải có mảng parts hợp lệ, nếu không coi như dữ liệu hỏng
     if (data.outline && !Array.isArray(data.outline.parts)) return null
+    const savedConfig: Partial<StudioConfig> = data.config ?? {}
     return {
-      config: { ...DEFAULT_CONFIG, ...(data.config ?? {}) },
+      config: {
+        ...DEFAULT_CONFIG,
+        ...savedConfig,
+        // Kênh trống trong config cũ → quay về default (Audivy)
+        channel_name: savedConfig.channel_name || DEFAULT_CONFIG.channel_name,
+      },
       outline: data.outline ?? null,
       outlineId: typeof data.outlineId === 'string' ? data.outlineId : null,
       scripts: data.scripts ?? {},

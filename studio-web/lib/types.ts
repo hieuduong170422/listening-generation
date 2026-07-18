@@ -50,7 +50,7 @@ export interface StudioConfig {
 export const DEFAULT_CONFIG: StudioConfig = {
   topic: '',
   language: 'vi',
-  channel_name: '',
+  channel_name: 'Audivy',
   num_parts: 3,
   total_minutes: 30,
   minutes_per_part: 10,
