@@ -89,7 +89,7 @@ export default function SettingsRail() {
       backgroundColor: 'var(--bg1)',
       borderLeft: '1px solid var(--bd)',
       overflowY: 'auto',
-      minHeight: 0,
+      height: 'calc(100vh - 50px)',
       padding: '0.75rem',
     }}>
       <div style={s.gap}>
