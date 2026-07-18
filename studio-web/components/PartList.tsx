@@ -107,6 +107,7 @@ function PartItem({ part }: { part: PartBrief }) {
 
   const busy = isGenerating || isRendering
   const otherGenerating = generatingScript !== null && !isGenerating
+  const otherRendering = renderingAudio !== null && !isRendering
   let statusColor = 'var(--t3)'
   if (hasAudio || isRendering) statusColor = 'var(--amber)'
   else if (hasScript || isGenerating) statusColor = 'var(--ok)'
@@ -276,15 +277,15 @@ function PartItem({ part }: { part: PartBrief }) {
             </button>
             <button
               onClick={handleRenderAudio}
-              disabled={busy || !localScript.trim()}
+              disabled={busy || otherRendering || !localScript.trim()}
               style={{
                 flex: 1, padding: '0.5rem',
                 backgroundColor: isRendering ? 'var(--bg3)' : 'var(--amber-m)',
-                border: `1px solid ${isRendering || !localScript.trim() ? 'transparent' : 'var(--amber)'}`,
+                border: `1px solid ${isRendering || otherRendering || !localScript.trim() ? 'transparent' : 'var(--amber)'}`,
                 borderRadius: '6px',
-                color: busy || !localScript.trim() ? 'var(--t3)' : 'var(--amber)',
+                color: busy || otherRendering || !localScript.trim() ? 'var(--t3)' : 'var(--amber)',
                 fontSize: '0.8125rem', fontWeight: 600,
-                cursor: busy || !localScript.trim() ? 'default' : 'pointer',
+                cursor: busy || otherRendering || !localScript.trim() ? 'default' : 'pointer',
               }}
             >
               {isRendering ? t.rendering : hasAudio ? t.reRender : t.renderAudio}
@@ -316,12 +317,15 @@ function PartItem({ part }: { part: PartBrief }) {
 export default function PartList() {
   const { state, dispatch } = useStudio()
   const { t } = useLang()
-  const { outline, scripts, audioIds, config, generatingScript } = state
+  const { outline, scripts, audioIds, config, generatingScript, renderingAudio } = state
 
   const [batchRunning, setBatchRunning] = useState(false)
+  const [renderAllRunning, setRenderAllRunning] = useState(false)
   const [downloadingAll, setDownloadingAll] = useState(false)
   const cancelRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
+  const cancelAudioRef = useRef(false)
+  const abortAudioRef = useRef<AbortController | null>(null)
 
   if (!outline) return null
 
@@ -329,6 +333,10 @@ export default function PartList() {
   const doneScripts = Object.keys(scripts).length
   const doneAudio = Object.keys(audioIds).length
   const allDone = doneScripts >= totalParts
+  // Part đủ điều kiện render audio: đã có script, chưa có audio
+  const audioPending = outline.parts.filter(
+    (p) => scripts[p.index]?.trim() && !audioIds[p.index],
+  ).length
 
   async function handleGenerateAll() {
     if (!outline || batchRunning) return
@@ -375,6 +383,48 @@ export default function PartList() {
   function handleCancelAll() {
     cancelRef.current = true
     abortRef.current?.abort()
+  }
+
+  async function handleRenderAll() {
+    if (!outline || renderAllRunning || batchRunning) return
+    if (config.host_voices.filter(Boolean).length === 0) {
+      dispatch({ type: 'SET_ERROR', message: t.selectVoiceFirst })
+      return
+    }
+    setRenderAllRunning(true)
+    cancelAudioRef.current = false
+    dispatch({ type: 'SET_ERROR', message: null })
+    try {
+      for (const part of outline.parts) {
+        if (cancelAudioRef.current) break
+        const script = scripts[part.index]
+        if (!script?.trim() || audioIds[part.index]) continue
+
+        dispatch({ type: 'SET_RENDERING_AUDIO', partIndex: part.index })
+        const controller = new AbortController()
+        abortAudioRef.current = controller
+        try {
+          const res = await renderAudio({
+            config, partIndex: part.index, script, signal: controller.signal,
+          })
+          dispatch({ type: 'SET_AUDIO_ID', partIndex: part.index, audioId: res.audio_id })
+        } catch (err) {
+          if (cancelAudioRef.current) break
+          const msg = err instanceof ApiError ? err.message : 'Audio render failed'
+          dispatch({ type: 'SET_ERROR', message: `${t.batchFailedAt} ${part.index}: ${msg}` })
+          break
+        }
+      }
+    } finally {
+      abortAudioRef.current = null
+      dispatch({ type: 'SET_RENDERING_AUDIO', partIndex: null })
+      setRenderAllRunning(false)
+    }
+  }
+
+  function handleCancelRenderAll() {
+    cancelAudioRef.current = true
+    abortAudioRef.current?.abort()
   }
 
   async function handleDownloadAll() {
@@ -465,19 +515,65 @@ export default function PartList() {
           ) : (
             <button
               onClick={handleGenerateAll}
-              disabled={allDone || generatingScript !== null}
+              disabled={allDone || generatingScript !== null || renderAllRunning}
               title={allDone ? t.allScriptsDone : undefined}
               style={{
                 padding: '0.4375rem 0.875rem',
-                backgroundColor: allDone || generatingScript !== null ? 'var(--bg3)' : 'var(--accent)',
+                backgroundColor: allDone || generatingScript !== null || renderAllRunning ? 'var(--bg3)' : 'var(--accent)',
                 border: 'none', borderRadius: '6px',
-                color: allDone || generatingScript !== null ? 'var(--t3)' : '#fff',
+                color: allDone || generatingScript !== null || renderAllRunning ? 'var(--t3)' : '#fff',
                 fontSize: '0.8125rem', fontWeight: 600,
-                cursor: allDone || generatingScript !== null ? 'default' : 'pointer',
+                cursor: allDone || generatingScript !== null || renderAllRunning ? 'default' : 'pointer',
                 whiteSpace: 'nowrap',
               }}
             >
               {t.genAllScripts}
+            </button>
+          )}
+
+          {/* Batch render audio */}
+          {renderAllRunning && renderingAudio !== null && (
+            <span style={{
+              fontSize: '0.75rem', color: 'var(--amber)', fontWeight: 600,
+              animation: 'pulse 1.5s ease-in-out infinite',
+              whiteSpace: 'nowrap',
+            }}>
+              {t.renderingAudioPart} {renderingAudio}/{totalParts}…
+            </span>
+          )}
+          {renderAllRunning ? (
+            <button
+              onClick={handleCancelRenderAll}
+              style={{
+                padding: '0.4375rem 0.875rem',
+                backgroundColor: 'rgba(224,82,82,0.12)',
+                border: '1px solid rgba(224,82,82,0.45)',
+                borderRadius: '6px',
+                color: '#e05252',
+                fontSize: '0.8125rem', fontWeight: 600,
+                cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              {t.cancelBtn}
+            </button>
+          ) : (
+            <button
+              onClick={handleRenderAll}
+              disabled={audioPending === 0 || batchRunning || renderingAudio !== null}
+              title={audioPending === 0 ? t.allAudioDone : undefined}
+              style={{
+                padding: '0.4375rem 0.875rem',
+                backgroundColor: audioPending === 0 || batchRunning || renderingAudio !== null
+                  ? 'var(--bg3)' : 'var(--amber-m)',
+                border: `1px solid ${audioPending === 0 || batchRunning || renderingAudio !== null ? 'transparent' : 'var(--amber)'}`,
+                borderRadius: '6px',
+                color: audioPending === 0 || batchRunning || renderingAudio !== null ? 'var(--t3)' : 'var(--amber)',
+                fontSize: '0.8125rem', fontWeight: 600,
+                cursor: audioPending === 0 || batchRunning || renderingAudio !== null ? 'default' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t.renderAllAudio}{audioPending > 0 ? ` (${audioPending})` : ''}
             </button>
           )}
         </div>

@@ -175,8 +175,9 @@ export async function renderAudio(params: {
   config: StudioConfig
   partIndex: number
   script: string
+  signal?: AbortSignal
 }): Promise<{ audio_id: string }> {
-  const { config, partIndex, script } = params
+  const { config, partIndex, script, signal } = params
   const body = {
     part_index: partIndex,
     script_text: script,
@@ -188,6 +189,7 @@ export async function renderAudio(params: {
   const res = await authFetch('/api/podcast/audio', {
     method: 'POST',
     body: JSON.stringify(body),
+    signal,
   })
   return res.json() as Promise<{ audio_id: string }>
 }
