@@ -66,6 +66,7 @@ export type T = {
   outlineHistoryNote: string
   outlineHistoryEmpty: string
   colTopic: string
+  colUser: string
   colDate: string
   colParts: string
   openBtn: string
@@ -147,9 +148,10 @@ const vi: T = {
   selectVoiceFirst: 'Chọn giọng TTS ở menu trái trước khi tạo audio',
   finishScriptsFirst: 'Hãy tạo xong script cho tất cả các phần trước khi tạo audio',
   outlineHistoryTitle: 'Dàn ý đã tạo (7 ngày gần nhất)',
-  outlineHistoryNote: 'Dữ liệu lưu trên trình duyệt này, tự xoá sau 7 ngày.',
+  outlineHistoryNote: 'Lưu trên server theo tài khoản, tự xoá sau 7 ngày. Bấm vào chủ đề để xem các phần.',
   outlineHistoryEmpty: 'Chưa có dàn ý nào được lưu.',
   colTopic: 'Chủ đề',
+  colUser: 'Người tạo',
   colDate: 'Cập nhật',
   colParts: 'Phần / Script / Audio',
   openBtn: 'Mở',
@@ -231,9 +233,10 @@ const en: T = {
   selectVoiceFirst: 'Select a TTS voice in the left menu first',
   finishScriptsFirst: 'Finish generating scripts for every part before rendering audio',
   outlineHistoryTitle: 'Generated outlines (last 7 days)',
-  outlineHistoryNote: 'Stored in this browser, auto-deleted after 7 days.',
+  outlineHistoryNote: 'Stored server-side per account, auto-deleted after 7 days. Click a topic to see its parts.',
   outlineHistoryEmpty: 'No saved outlines yet.',
   colTopic: 'Topic',
+  colUser: 'Creator',
   colDate: 'Updated',
   colParts: 'Parts / Scripts / Audio',
   openBtn: 'Open',

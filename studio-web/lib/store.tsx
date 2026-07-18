@@ -16,6 +16,7 @@ import { upsertOutlineEntry, type OutlineHistoryEntry } from './history'
 
 const STORAGE_KEY = 'studio-state-v1'
 const PERSIST_DEBOUNCE_MS = 300
+const REMOTE_SYNC_DEBOUNCE_MS = 1200
 
 interface PersistedState {
   config: StudioConfig
@@ -135,7 +136,7 @@ function reducer(state: StudioState, action: Action): StudioState {
     case 'LOAD_SNAPSHOT':
       return {
         ...state,
-        config: action.entry.config,
+        config: { ...DEFAULT_CONFIG, ...action.entry.config },
         outline: action.entry.outline,
         outlineId: action.entry.id,
         scripts: action.entry.scripts,
@@ -207,21 +208,26 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   // Lưu localStorage mỗi khi dữ liệu chính đổi (debounce vì gõ script dispatch từng phím)
   useEffect(() => {
-    const id = window.setTimeout(() => {
-      savePersisted(state)
-      // Đồng bộ vào lịch sử dàn ý (giữ 7 ngày) để xem lại sau
-      if (state.outline && state.outlineId) {
-        upsertOutlineEntry({
-          id: state.outlineId,
-          config: state.config,
-          outline: state.outline,
-          scripts: state.scripts,
-          audioIds: state.audioIds,
-        })
-      }
-    }, PERSIST_DEBOUNCE_MS)
+    const id = window.setTimeout(() => savePersisted(state), PERSIST_DEBOUNCE_MS)
     return () => window.clearTimeout(id)
   }, [state.config, state.outline, state.outlineId, state.scripts, state.audioIds, state.selectedPart])
+
+  // Đồng bộ lịch sử dàn ý lên server (theo user, giữ 7 ngày) — fire-and-forget
+  useEffect(() => {
+    if (!state.outline || !state.outlineId) return
+    const outline = state.outline
+    const outlineId = state.outlineId
+    const id = window.setTimeout(() => {
+      upsertOutlineEntry({
+        id: outlineId,
+        config: state.config,
+        outline,
+        scripts: state.scripts,
+        audioIds: state.audioIds,
+      }).catch(() => { /* offline/hết phiên — lần đổi kế tiếp sẽ sync lại */ })
+    }, REMOTE_SYNC_DEBOUNCE_MS)
+    return () => window.clearTimeout(id)
+  }, [state.config, state.outline, state.outlineId, state.scripts, state.audioIds])
 
   return (
     <StudioContext.Provider value={{ state, dispatch }}>

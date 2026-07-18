@@ -1,14 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { fetchHistory, fetchSubscription, getHistoryAudioUrl } from '@/lib/api'
+import { fetchSubscription } from '@/lib/api'
 import { useLang } from '@/lib/lang'
 import { useStudio } from '@/lib/store'
-import { loadOutlineHistory, removeOutlineEntry, type OutlineHistoryEntry } from '@/lib/history'
-import type { HistoryItem, Subscription } from '@/lib/types'
+import {
+  fetchOutlineHistory,
+  removeOutlineEntry,
+  type OutlineHistoryEntry,
+} from '@/lib/history'
+import type { Subscription } from '@/lib/types'
 
-function formatDate(unix: number): string {
-  return new Date(unix * 1000).toLocaleDateString('vi-VN', {
+function formatDate(ms: number): string {
+  return new Date(ms).toLocaleDateString('vi-VN', {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
@@ -19,26 +23,41 @@ function formatChars(n: number): string {
   return String(n)
 }
 
+// ── Bảng lịch sử dàn ý: 1 dòng / chủ đề, bấm vào xổ danh sách part ────────────
+
 function OutlineHistoryTable({ onOpen }: { onOpen: () => void }) {
   const { t } = useLang()
   const { dispatch } = useStudio()
   const [entries, setEntries] = useState<OutlineHistoryEntry[]>([])
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => { setEntries(loadOutlineHistory()) }, [])
+  useEffect(() => {
+    fetchOutlineHistory()
+      .then(({ entries, isAdmin }) => { setEntries(entries); setIsAdmin(isAdmin) })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [])
 
   function handleOpen(entry: OutlineHistoryEntry) {
     dispatch({ type: 'LOAD_SNAPSHOT', entry })
     onOpen()
   }
 
-  function handleDelete(id: string) {
-    removeOutlineEntry(id)
-    setEntries((prev) => prev.filter((e) => e.id !== id))
+  async function handleDelete(id: string) {
+    try {
+      await removeOutlineEntry(id)
+      setEntries((prev) => prev.filter((e) => e.id !== id))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed')
+    }
   }
 
   const cellStyle: React.CSSProperties = {
-    padding: '0.5rem 0.75rem', fontSize: '0.8125rem',
-    borderBottom: '1px solid var(--bd-s)', verticalAlign: 'top',
+    padding: '0.5625rem 0.75rem', fontSize: '0.8125rem',
+    borderBottom: '1px solid var(--bd-s)', verticalAlign: 'middle',
   }
   const headStyle: React.CSSProperties = {
     ...cellStyle,
@@ -46,6 +65,7 @@ function OutlineHistoryTable({ onOpen }: { onOpen: () => void }) {
     textTransform: 'uppercase', letterSpacing: '0.05em',
     textAlign: 'left', whiteSpace: 'nowrap',
   }
+  const nCols = isAdmin ? 5 : 4
 
   return (
     <div style={{
@@ -61,7 +81,15 @@ function OutlineHistoryTable({ onOpen }: { onOpen: () => void }) {
         </div>
       </div>
 
-      {entries.length === 0 ? (
+      {error && (
+        <p style={{ padding: '0.5rem 1rem', fontSize: '0.75rem', color: '#E5534B' }}>{error}</p>
+      )}
+
+      {loading ? (
+        <p style={{ padding: '0.75rem 1rem 1rem', fontSize: '0.8125rem', color: 'var(--t3)' }}>
+          {t.loading}
+        </p>
+      ) : entries.length === 0 ? (
         <p style={{ padding: '0.75rem 1rem 1rem', fontSize: '0.8125rem', color: 'var(--t3)' }}>
           {t.outlineHistoryEmpty}
         </p>
@@ -71,6 +99,7 @@ function OutlineHistoryTable({ onOpen }: { onOpen: () => void }) {
             <thead>
               <tr>
                 <th style={headStyle}>{t.colTopic}</th>
+                {isAdmin && <th style={headStyle}>{t.colUser}</th>}
                 <th style={headStyle}>{t.colDate}</th>
                 <th style={headStyle}>{t.colParts}</th>
                 <th style={headStyle} />
@@ -81,50 +110,22 @@ function OutlineHistoryTable({ onOpen }: { onOpen: () => void }) {
                 const total = entry.outline.parts.length
                 const nScripts = Object.keys(entry.scripts).length
                 const nAudio = Object.keys(entry.audioIds).length
+                const isExpanded = expandedId === entry.id
                 return (
-                  <tr key={entry.id}>
-                    <td style={{ ...cellStyle, color: 'var(--t1)', fontWeight: 500, maxWidth: '320px' }}>
-                      <span style={{
-                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden', lineHeight: 1.4,
-                      }}>
-                        {entry.outline.topic}
-                      </span>
-                    </td>
-                    <td style={{ ...cellStyle, color: 'var(--t2)', whiteSpace: 'nowrap' }}>
-                      {formatDate(Math.floor(entry.updatedAt / 1000))}
-                    </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                      <span style={{ color: 'var(--t2)' }}>{total}</span>
-                      <span style={{ color: 'var(--ok)' }}> / {nScripts}</span>
-                      <span style={{ color: 'var(--amber)' }}> / {nAudio}</span>
-                    </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap', textAlign: 'right' }}>
-                      <button
-                        onClick={() => handleOpen(entry)}
-                        style={{
-                          padding: '0.25rem 0.625rem', marginRight: '0.375rem',
-                          backgroundColor: 'var(--accent)', border: 'none',
-                          borderRadius: '5px', color: '#fff',
-                          fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
-                        }}
-                      >
-                        {t.openBtn}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(entry.id)}
-                        style={{
-                          padding: '0.25rem 0.625rem',
-                          backgroundColor: 'transparent',
-                          border: '1px solid rgba(229,83,75,0.4)',
-                          borderRadius: '5px', color: '#E5534B',
-                          fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
-                        }}
-                      >
-                        {t.deleteBtn}
-                      </button>
-                    </td>
-                  </tr>
+                  <FragmentRow
+                    key={entry.id}
+                    entry={entry}
+                    isAdmin={isAdmin}
+                    isExpanded={isExpanded}
+                    nCols={nCols}
+                    total={total}
+                    nScripts={nScripts}
+                    nAudio={nAudio}
+                    cellStyle={cellStyle}
+                    onToggle={() => setExpandedId(isExpanded ? null : entry.id)}
+                    onOpen={() => handleOpen(entry)}
+                    onDelete={() => handleDelete(entry.id)}
+                  />
                 )
               })}
             </tbody>
@@ -135,56 +136,171 @@ function OutlineHistoryTable({ onOpen }: { onOpen: () => void }) {
   )
 }
 
+interface FragmentRowProps {
+  entry: OutlineHistoryEntry
+  isAdmin: boolean
+  isExpanded: boolean
+  nCols: number
+  total: number
+  nScripts: number
+  nAudio: number
+  cellStyle: React.CSSProperties
+  onToggle: () => void
+  onOpen: () => void
+  onDelete: () => void
+}
+
+function FragmentRow({
+  entry, isAdmin, isExpanded, nCols, total, nScripts, nAudio,
+  cellStyle, onToggle, onOpen, onDelete,
+}: FragmentRowProps) {
+  const { t } = useLang()
+  return (
+    <>
+      {/* Dòng chủ đề — click để xổ part */}
+      <tr
+        onClick={onToggle}
+        style={{ cursor: 'pointer', backgroundColor: isExpanded ? 'var(--bg3)' : 'transparent' }}
+      >
+        <td style={{ ...cellStyle, color: 'var(--t1)', fontWeight: 500, maxWidth: '320px' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{
+              fontSize: '0.6875rem', color: 'var(--t3)', flexShrink: 0,
+              display: 'inline-block',
+              transform: isExpanded ? 'rotate(90deg)' : 'none',
+              transition: 'transform 0.15s',
+            }}>▶</span>
+            <span style={{
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+              overflow: 'hidden', lineHeight: 1.4,
+            }}>
+              {entry.outline.topic}
+            </span>
+          </span>
+        </td>
+        {isAdmin && (
+          <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
+            <span style={{
+              fontSize: '0.6875rem', fontWeight: 600, color: 'var(--accent)',
+              backgroundColor: 'rgba(107,95,227,0.1)',
+              border: '1px solid rgba(107,95,227,0.25)',
+              borderRadius: '4px', padding: '0.125rem 0.4rem',
+            }}>
+              {entry.username}
+            </span>
+          </td>
+        )}
+        <td style={{ ...cellStyle, color: 'var(--t2)', whiteSpace: 'nowrap' }}>
+          {formatDate(entry.updatedAt * 1000)}
+        </td>
+        <td style={{ ...cellStyle, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ color: 'var(--t2)' }}>{total}</span>
+          <span style={{ color: 'var(--ok)' }}> / {nScripts}</span>
+          <span style={{ color: 'var(--amber)' }}> / {nAudio}</span>
+        </td>
+        <td
+          style={{ ...cellStyle, whiteSpace: 'nowrap', textAlign: 'right' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={onOpen}
+            style={{
+              padding: '0.25rem 0.625rem', marginRight: '0.375rem',
+              backgroundColor: 'var(--accent)', border: 'none',
+              borderRadius: '5px', color: '#fff',
+              fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            {t.openBtn}
+          </button>
+          <button
+            onClick={onDelete}
+            style={{
+              padding: '0.25rem 0.625rem',
+              backgroundColor: 'transparent',
+              border: '1px solid rgba(229,83,75,0.4)',
+              borderRadius: '5px', color: '#E5534B',
+              fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            {t.deleteBtn}
+          </button>
+        </td>
+      </tr>
+
+      {/* Danh sách part của chủ đề */}
+      {isExpanded && (
+        <tr>
+          <td colSpan={nCols} style={{ padding: 0, borderBottom: '1px solid var(--bd-s)' }}>
+            <div style={{
+              padding: '0.5rem 1rem 0.75rem 2rem',
+              backgroundColor: 'var(--bg1)',
+              display: 'flex', flexDirection: 'column', gap: '0.375rem',
+            }}>
+              {entry.outline.parts.map((part) => {
+                const hasScript = Boolean(entry.scripts[part.index])
+                const hasAudio = Boolean(entry.audioIds[part.index])
+                return (
+                  <div key={part.index} style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                    <span style={{
+                      width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0,
+                      backgroundColor: 'var(--bg3)', border: '1px solid var(--bd)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '0.625rem', fontWeight: 700, color: 'var(--t2)',
+                    }}>
+                      {part.index}
+                    </span>
+                    <span style={{
+                      flex: 1, minWidth: 0, fontSize: '0.8125rem', color: 'var(--t1)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {part.title}
+                    </span>
+                    <span style={{ display: 'flex', gap: '0.375rem', flexShrink: 0 }}>
+                      {hasScript && (
+                        <span style={{
+                          fontSize: '0.5625rem', fontWeight: 700,
+                          padding: '0.125rem 0.375rem', borderRadius: '3px',
+                          backgroundColor: 'rgba(107,95,227,0.1)',
+                          border: '1px solid rgba(107,95,227,0.2)',
+                          color: 'var(--accent)', textTransform: 'uppercase',
+                        }}>{t.scriptsBadge}</span>
+                      )}
+                      {hasAudio && (
+                        <span style={{
+                          fontSize: '0.5625rem', fontWeight: 700,
+                          padding: '0.125rem 0.375rem', borderRadius: '3px',
+                          backgroundColor: 'rgba(201,122,72,0.1)',
+                          border: '1px solid rgba(201,122,72,0.2)',
+                          color: 'var(--amber)', textTransform: 'uppercase',
+                        }}>{t.audioBadge}</span>
+                      )}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+// ── Panel chính: quota ElevenLabs + bảng lịch sử theo chủ đề ──────────────────
+
 export default function HistoryPanel({ onOpenOutline }: { onOpenOutline?: () => void }) {
   const { t } = useLang()
   const [sub, setSub] = useState<Subscription | null>(null)
-  const [items, setItems] = useState<HistoryItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [playingId, setPlayingId] = useState<string | null>(null)
-  const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null)
 
   useEffect(() => {
-    setLoading(true)
-    Promise.all([fetchSubscription(), fetchHistory(100)])
-      .then(([s, h]) => { setSub(s); setItems(h) })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false))
+    fetchSubscription().then(setSub).catch(() => setSub(null))
   }, [])
-
-  function togglePlay(item: HistoryItem) {
-    if (playingId === item.history_item_id) {
-      audioEl?.pause()
-      setPlayingId(null)
-      setAudioEl(null)
-      return
-    }
-    audioEl?.pause()
-    const el = new Audio(getHistoryAudioUrl(item.history_item_id))
-    el.onended = () => { setPlayingId(null); setAudioEl(null) }
-    el.play().catch(() => {})
-    setPlayingId(item.history_item_id)
-    setAudioEl(el)
-  }
 
   const usedPct = sub ? Math.min(100, (sub.character_count / sub.character_limit) * 100) : 0
 
-  if (loading) {
-    return (
-      <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem' }}>
-        <OutlineHistoryTable onOpen={onOpenOutline ?? (() => {})} />
-        <div style={{ textAlign: 'center', color: 'var(--t3)', padding: '2rem 0' }}>
-          {t.loading}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem' }}>
-      {/* Outline history (localStorage, 7 ngày) */}
-      <OutlineHistoryTable onOpen={onOpenOutline ?? (() => {})} />
-
       {/* Subscription quota */}
       {sub && (
         <div style={{
@@ -224,95 +340,8 @@ export default function HistoryPanel({ onOpenOutline }: { onOpenOutline?: () => 
         </div>
       )}
 
-      {error && (
-        <p style={{
-          fontSize: '0.8125rem', color: '#E5534B', marginBottom: '1rem',
-          backgroundColor: 'rgba(229,83,75,0.1)', border: '1px solid rgba(229,83,75,0.25)',
-          borderRadius: '6px', padding: '0.5rem 0.75rem',
-        }}>
-          {error}
-        </p>
-      )}
-
-      {/* History list */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        {items.length === 0 && !error && (
-          <p style={{ color: 'var(--t3)', fontSize: '0.875rem', textAlign: 'center', marginTop: '2rem' }}>
-            {t.noHistory}
-          </p>
-        )}
-        {items.map((item) => {
-          const isPlaying = playingId === item.history_item_id
-          const charDelta = item.character_count_change_to - item.character_count_change_from
-
-          return (
-            <div
-              key={item.history_item_id}
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
-                padding: '0.75rem 0.875rem',
-                backgroundColor: 'var(--bg2)', border: `1px solid ${isPlaying ? 'var(--amber)' : 'var(--bd)'}`,
-                borderRadius: '7px',
-                transition: 'border-color 0.15s',
-              }}
-            >
-              {/* Play button */}
-              <button
-                onClick={() => togglePlay(item)}
-                style={{
-                  flexShrink: 0, width: '32px', height: '32px', borderRadius: '50%',
-                  backgroundColor: isPlaying ? 'var(--amber)' : 'var(--amber-m)',
-                  border: '1px solid var(--amber)',
-                  color: isPlaying ? '#fff' : 'var(--amber)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', fontSize: '0.75rem',
-                }}
-                title={isPlaying ? 'Pause' : 'Play'}
-              >
-                {isPlaying ? '⏸' : '▶'}
-              </button>
-
-              {/* Info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--t1)' }}>
-                    {item.voice_name}
-                  </span>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--t3)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                    {formatChars(charDelta)} chars
-                  </span>
-                </div>
-                <p style={{
-                  fontSize: '0.75rem', color: 'var(--t2)', lineHeight: 1.4,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  marginBottom: '0.25rem',
-                }}>
-                  {item.text}
-                </p>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--t3)' }}>
-                  {formatDate(item.date_unix)}
-                </span>
-              </div>
-
-              {/* Download */}
-              <a
-                href={getHistoryAudioUrl(item.history_item_id)}
-                download
-                style={{
-                  flexShrink: 0, width: '28px', height: '28px', borderRadius: '5px',
-                  backgroundColor: 'var(--bg3)', border: '1px solid var(--bd)',
-                  color: 'var(--t3)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  textDecoration: 'none', fontSize: '0.75rem',
-                  transition: 'color 0.15s, border-color 0.15s',
-                }}
-                title="Download"
-              >
-                ↓
-              </a>
-            </div>
-          )
-        })}
-      </div>
+      {/* Lịch sử dàn ý theo chủ đề */}
+      <OutlineHistoryTable onOpen={onOpenOutline ?? (() => {})} />
     </div>
   )
 }
