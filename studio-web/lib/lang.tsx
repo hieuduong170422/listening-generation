@@ -61,6 +61,7 @@ export type T = {
   renderingAudioPart: string
   allAudioDone: string
   selectVoiceFirst: string
+  finishScriptsFirst: string
   outlineHistoryTitle: string
   outlineHistoryNote: string
   outlineHistoryEmpty: string
@@ -144,6 +145,7 @@ const vi: T = {
   renderingAudioPart: 'Đang tạo audio phần',
   allAudioDone: 'Các phần có script đều đã có audio',
   selectVoiceFirst: 'Chọn giọng TTS ở menu trái trước khi tạo audio',
+  finishScriptsFirst: 'Hãy tạo xong script cho tất cả các phần trước khi tạo audio',
   outlineHistoryTitle: 'Dàn ý đã tạo (7 ngày gần nhất)',
   outlineHistoryNote: 'Dữ liệu lưu trên trình duyệt này, tự xoá sau 7 ngày.',
   outlineHistoryEmpty: 'Chưa có dàn ý nào được lưu.',
@@ -227,6 +229,7 @@ const en: T = {
   renderingAudioPart: 'Rendering audio for part',
   allAudioDone: 'Every scripted part already has audio',
   selectVoiceFirst: 'Select a TTS voice in the left menu first',
+  finishScriptsFirst: 'Finish generating scripts for every part before rendering audio',
   outlineHistoryTitle: 'Generated outlines (last 7 days)',
   outlineHistoryNote: 'Stored in this browser, auto-deleted after 7 days.',
   outlineHistoryEmpty: 'No saved outlines yet.',

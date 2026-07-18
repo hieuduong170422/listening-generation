@@ -387,6 +387,10 @@ export default function PartList() {
 
   async function handleRenderAll() {
     if (!outline || renderAllRunning || batchRunning) return
+    if (Object.keys(scripts).length < outline.parts.length) {
+      dispatch({ type: 'SET_ERROR', message: t.finishScriptsFirst })
+      return
+    }
     if (config.host_voices.filter(Boolean).length === 0) {
       dispatch({ type: 'SET_ERROR', message: t.selectVoiceFirst })
       return
@@ -531,8 +535,8 @@ export default function PartList() {
             </button>
           )}
 
-          {/* Batch render audio */}
-          {renderAllRunning && renderingAudio !== null && (
+          {/* Batch render audio — chỉ hiện khi TẤT CẢ part đã có script */}
+          {allDone && renderAllRunning && renderingAudio !== null && (
             <span style={{
               fontSize: '0.75rem', color: 'var(--amber)', fontWeight: 600,
               animation: 'pulse 1.5s ease-in-out infinite',
@@ -541,7 +545,7 @@ export default function PartList() {
               {t.renderingAudioPart} {renderingAudio}/{totalParts}…
             </span>
           )}
-          {renderAllRunning ? (
+          {allDone && (renderAllRunning ? (
             <button
               onClick={handleCancelRenderAll}
               style={{
@@ -575,7 +579,7 @@ export default function PartList() {
             >
               {t.renderAllAudio}{audioPending > 0 ? ` (${audioPending})` : ''}
             </button>
-          )}
+          ))}
         </div>
       </div>
 
