@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from google import genai
@@ -40,20 +41,64 @@ class Script:
         return "\n".join(f"{line.speaker}: {line.text}" for line in self.lines)
 
 
-_LINE_RE = re.compile(r"^\s*Speaker\s*([1-9])\s*[::]\s*(.+)$", re.IGNORECASE)
+log = logging.getLogger(__name__)
+
+# Chịu được các biến thể model hay trả về: "**Speaker1:**", "- Speaker 2:",
+# "> Speaker1：" (full-width colon), "**Speaker1**: ..."
+_LINE_RE = re.compile(
+    r"^\s*[>#\-*_\s]*(?:Speaker|Host)\s*([1-9])\s*[*_]*\s*[:：]\s*[*_]*\s*(.*\S)\s*$",
+    re.IGNORECASE,
+)
+_FENCE_RE = re.compile(r"^```[a-zA-Z0-9]*\s*$")
 
 
-def _parse_lines(raw: str) -> tuple[DialogueLine, ...]:
+def _strip_fences(raw: str) -> str:
+    return "\n".join(l for l in raw.splitlines() if not _FENCE_RE.match(l.strip()))
+
+
+def _parse_by_names(text: str, speaker_names: tuple[str, ...]) -> list[DialogueLine]:
+    """Fallback: model dùng tên host thật (vd "Linh:") thay vì SpeakerN."""
+    name_to_speaker = {
+        name.strip().lower(): f"Speaker{i + 1}"
+        for i, name in enumerate(speaker_names)
+        if name.strip()
+    }
+    if not name_to_speaker:
+        return []
+    alternation = "|".join(re.escape(n) for n in name_to_speaker)
+    name_re = re.compile(
+        rf"^\s*[>#\-*_\s]*({alternation})\s*[*_]*\s*[:：]\s*[*_]*\s*(.*\S)\s*$",
+        re.IGNORECASE,
+    )
     parsed: list[DialogueLine] = []
-    for line in raw.splitlines():
+    for line in text.splitlines():
+        match = name_re.match(line)
+        if match:
+            speaker = name_to_speaker[match.group(1).strip().lower()]
+            parsed.append(DialogueLine(speaker=speaker, text=match.group(2).strip()))
+    return parsed
+
+
+def _parse_lines(
+    raw: str, speaker_names: tuple[str, ...] = ()
+) -> tuple[DialogueLine, ...]:
+    text = _strip_fences(raw)
+    parsed: list[DialogueLine] = []
+    for line in text.splitlines():
         match = _LINE_RE.match(line)
         if not match:
             continue
-        num, text = match.groups()
-        normalized = f"Speaker{num}"
-        parsed.append(DialogueLine(speaker=normalized, text=text.strip()))
+        num, content = match.groups()
+        parsed.append(DialogueLine(speaker=f"Speaker{num}", text=content.strip()))
+    if not parsed and speaker_names:
+        parsed = _parse_by_names(text, speaker_names)
     if not parsed:
-        raise ValueError("Không parse được kịch bản — model không trả về định dạng SpeakerN.")
+        snippet = " ".join(raw.split())[:200]
+        log.error("Script parse thất bại. Raw đầu phản hồi: %r", raw[:1000])
+        raise ValueError(
+            "Không parse được kịch bản — model không trả về định dạng SpeakerN. "
+            f"Đầu phản hồi: {snippet!r}"
+        )
     return tuple(parsed)
 
 
@@ -326,5 +371,23 @@ def generate_part_script(
     )
     track_response(usage_store, response, "text")
     raw = (response.text or "").strip()
-    lines = _parse_lines(raw)
+    try:
+        lines = _parse_lines(raw, speaker_names=host_names)
+    except ValueError:
+        # Model trả sai định dạng — thử lại 1 lần với nhắc nhở nghiêm hơn
+        log.warning(
+            "Parse thất bại lần 1 (part %d), retry với nhắc định dạng", part_index
+        )
+        reminder = (
+            "\n\nYOUR PREVIOUS ATTEMPT FAILED THE FORMAT CHECK. "
+            "Output ONLY dialogue lines. Every single line MUST start with "
+            "`Speaker1:` or `Speaker2:` (plain text, no bold, no markdown, "
+            "no code fences, no headings). Nothing else."
+        )
+        response = call_with_retry(
+            client.models.generate_content, model=text_model, contents=prompt + reminder
+        )
+        track_response(usage_store, response, "text")
+        raw = (response.text or "").strip()
+        lines = _parse_lines(raw, speaker_names=host_names)
     return Script(topic=f"{topic} — Part {part_index}: {part_title}", style=style_key, lines=lines)
