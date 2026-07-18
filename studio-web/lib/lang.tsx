@@ -49,6 +49,11 @@ export type T = {
   chars: string
   genScript: string
   regenScript: string
+  genAllScripts: string
+  cancelBtn: string
+  writingPart: string
+  batchFailedAt: string
+  allScriptsDone: string
   renderAudio: string
   reRender: string
   writing: string
@@ -112,6 +117,11 @@ const vi: T = {
   chars: 'ký tự',
   genScript: '✍ Tạo script',
   regenScript: '↺ Tạo lại',
+  genAllScripts: '⚡ Tạo tất cả script',
+  cancelBtn: '✕ Huỷ',
+  writingPart: 'Đang viết phần',
+  batchFailedAt: 'Lỗi khi tạo phần',
+  allScriptsDone: 'Đã có đủ script cho tất cả các phần',
   renderAudio: '▶ Tạo audio',
   reRender: '↺ Tạo lại',
   writing: 'Đang viết…',
@@ -175,6 +185,11 @@ const en: T = {
   chars: 'chars',
   genScript: '✍ Gen script',
   regenScript: '↺ Regen script',
+  genAllScripts: '⚡ Gen all scripts',
+  cancelBtn: '✕ Cancel',
+  writingPart: 'Writing part',
+  batchFailedAt: 'Failed at part',
+  allScriptsDone: 'All parts already have scripts',
   renderAudio: '▶ Render audio',
   reRender: '↺ Re-render',
   writing: 'Writing…',

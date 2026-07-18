@@ -143,8 +143,9 @@ export async function generateScript(params: {
   outline: Outline
   partIndex: number
   previousScripts: Record<string, string>
+  signal?: AbortSignal
 }): Promise<{ text: string }> {
-  const { config, outline, partIndex, previousScripts } = params
+  const { config, outline, partIndex, previousScripts, signal } = params
   const body = {
     outline,
     part_index: partIndex,
@@ -163,6 +164,7 @@ export async function generateScript(params: {
   const res = await authFetch('/api/podcast/script', {
     method: 'POST',
     body: JSON.stringify(body),
+    signal,
   })
   return res.json() as Promise<{ text: string }>
 }

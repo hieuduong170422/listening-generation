@@ -209,13 +209,13 @@ export default function StudioApp() {
       </header>
 
       {/* Body */}
-      <main style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <main style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
 
         {/* ── Studio tab ── */}
         {tab === 'studio' && (
           <>
             <ConfigRail />
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
               {hasOutline ? <PartList /> : <EmptyState />}
             </div>
             <SettingsRail />

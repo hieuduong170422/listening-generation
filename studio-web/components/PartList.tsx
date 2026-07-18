@@ -92,6 +92,7 @@ function PartItem({ part }: { part: PartBrief }) {
   }
 
   const busy = isGenerating || isRendering
+  const otherGenerating = generatingScript !== null && !isGenerating
   let statusColor = 'var(--t3)'
   if (hasAudio || isRendering) statusColor = 'var(--amber)'
   else if (hasScript || isGenerating) statusColor = 'var(--ok)'
@@ -102,6 +103,7 @@ function PartItem({ part }: { part: PartBrief }) {
       border: `1px solid ${isExpanded ? 'var(--accent)' : 'var(--bd)'}`,
       borderRadius: '8px', overflow: 'hidden',
       transition: 'border-color 0.15s',
+      flexShrink: 0,
     }}>
       {/* Header row */}
       <button
@@ -125,13 +127,14 @@ function PartItem({ part }: { part: PartBrief }) {
         </span>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--t1)', lineHeight: 1.3 }}>
+          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--t1)', lineHeight: 1.35 }}>
             {part.title}
           </div>
           {!isExpanded && (
             <div style={{
-              fontSize: '0.75rem', color: 'var(--t2)', marginTop: '0.1rem',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              fontSize: '0.75rem', color: 'var(--t2)', marginTop: '0.2rem', lineHeight: 1.5,
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
             }}>
               {part.summary}
             </div>
@@ -245,14 +248,14 @@ function PartItem({ part }: { part: PartBrief }) {
           }}>
             <button
               onClick={handleGenerateScript}
-              disabled={busy}
+              disabled={busy || otherGenerating}
               style={{
                 flex: 1, padding: '0.5rem',
-                backgroundColor: busy ? 'var(--bg3)' : 'var(--accent)',
+                backgroundColor: busy || otherGenerating ? 'var(--bg3)' : 'var(--accent)',
                 border: 'none', borderRadius: '6px',
-                color: busy ? 'var(--t3)' : '#fff',
+                color: busy || otherGenerating ? 'var(--t3)' : '#fff',
                 fontSize: '0.8125rem', fontWeight: 600,
-                cursor: busy ? 'default' : 'pointer',
+                cursor: busy || otherGenerating ? 'default' : 'pointer',
               }}
             >
               {isGenerating ? t.writing : hasScript ? t.regenScript : t.genScript}
@@ -280,37 +283,138 @@ function PartItem({ part }: { part: PartBrief }) {
 }
 
 export default function PartList() {
-  const { state } = useStudio()
+  const { state, dispatch } = useStudio()
   const { t } = useLang()
-  const { outline, scripts, audioIds } = state
+  const { outline, scripts, audioIds, config, generatingScript } = state
+
+  const [batchRunning, setBatchRunning] = useState(false)
+  const cancelRef = useRef(false)
+  const abortRef = useRef<AbortController | null>(null)
 
   if (!outline) return null
 
   const totalParts = outline.parts.length
   const doneScripts = Object.keys(scripts).length
   const doneAudio = Object.keys(audioIds).length
+  const allDone = doneScripts >= totalParts
+
+  async function handleGenerateAll() {
+    if (!outline || batchRunning) return
+    setBatchRunning(true)
+    cancelRef.current = false
+    dispatch({ type: 'SET_ERROR', message: null })
+
+    let accumulated: Record<string, string> = Object.fromEntries(
+      Object.entries(scripts).map(([k, v]) => [String(k), v])
+    )
+
+    try {
+      for (const part of outline.parts) {
+        if (cancelRef.current) break
+        if (accumulated[String(part.index)]) continue
+
+        dispatch({ type: 'SET_GENERATING_SCRIPT', partIndex: part.index })
+        const controller = new AbortController()
+        abortRef.current = controller
+        try {
+          const res = await generateScript({
+            config,
+            outline,
+            partIndex: part.index,
+            previousScripts: accumulated,
+            signal: controller.signal,
+          })
+          accumulated = { ...accumulated, [String(part.index)]: res.text }
+          dispatch({ type: 'SET_SCRIPT', partIndex: part.index, text: res.text })
+        } catch (err) {
+          if (cancelRef.current) break
+          const msg = err instanceof ApiError ? err.message : 'Script generation failed'
+          dispatch({ type: 'SET_ERROR', message: `${t.batchFailedAt} ${part.index}: ${msg}` })
+          break
+        }
+      }
+    } finally {
+      abortRef.current = null
+      dispatch({ type: 'SET_GENERATING_SCRIPT', partIndex: null })
+      setBatchRunning(false)
+    }
+  }
+
+  function handleCancelAll() {
+    cancelRef.current = true
+    abortRef.current?.abort()
+  }
 
   return (
-    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       {/* Outline header */}
       <div style={{
         padding: '0.75rem 1.125rem', borderBottom: '1px solid var(--bd)',
         backgroundColor: 'var(--bg1)', flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem',
       }}>
-        <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--t1)', marginBottom: '0.25rem', lineHeight: 1.3 }}>
-          {outline.topic}
-        </h2>
-        <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', color: 'var(--t2)' }}>
-          <span>{totalParts} {t.partsLabel} · {outline.total_minutes} {t.minLabel}</span>
-          {doneScripts > 0 && <span style={{ color: 'var(--ok)' }}>{doneScripts}/{totalParts} {t.scriptsBadge}</span>}
-          {doneAudio > 0 && <span style={{ color: 'var(--amber)' }}>{doneAudio}/{totalParts} {t.audioBadge}</span>}
+        <div style={{ minWidth: 0 }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--t1)', marginBottom: '0.25rem', lineHeight: 1.3 }}>
+            {outline.topic}
+          </h2>
+          <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', color: 'var(--t2)', flexWrap: 'wrap' }}>
+            <span>{totalParts} {t.partsLabel} · {outline.total_minutes} {t.minLabel}</span>
+            {doneScripts > 0 && <span style={{ color: 'var(--ok)' }}>{doneScripts}/{totalParts} {t.scriptsBadge}</span>}
+            {doneAudio > 0 && <span style={{ color: 'var(--amber)' }}>{doneAudio}/{totalParts} {t.audioBadge}</span>}
+          </div>
+        </div>
+
+        {/* Batch actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+          {batchRunning && generatingScript !== null && (
+            <span style={{
+              fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600,
+              animation: 'pulse 1.5s ease-in-out infinite',
+              whiteSpace: 'nowrap',
+            }}>
+              {t.writingPart} {generatingScript}/{totalParts}…
+            </span>
+          )}
+          {batchRunning ? (
+            <button
+              onClick={handleCancelAll}
+              style={{
+                padding: '0.4375rem 0.875rem',
+                backgroundColor: 'rgba(224,82,82,0.12)',
+                border: '1px solid rgba(224,82,82,0.45)',
+                borderRadius: '6px',
+                color: '#e05252',
+                fontSize: '0.8125rem', fontWeight: 600,
+                cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              {t.cancelBtn}
+            </button>
+          ) : (
+            <button
+              onClick={handleGenerateAll}
+              disabled={allDone || generatingScript !== null}
+              title={allDone ? t.allScriptsDone : undefined}
+              style={{
+                padding: '0.4375rem 0.875rem',
+                backgroundColor: allDone || generatingScript !== null ? 'var(--bg3)' : 'var(--accent)',
+                border: 'none', borderRadius: '6px',
+                color: allDone || generatingScript !== null ? 'var(--t3)' : '#fff',
+                fontSize: '0.8125rem', fontWeight: 600,
+                cursor: allDone || generatingScript !== null ? 'default' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t.genAllScripts}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Accordion list */}
       <div style={{
-        flex: 1, overflowY: 'auto', padding: '0.75rem 0.875rem',
-        display: 'flex', flexDirection: 'column', gap: '0.5rem',
+        flex: 1, minHeight: 0, overflowY: 'auto', padding: '0.75rem 0.875rem',
+        display: 'flex', flexDirection: 'column', gap: '0.625rem',
       }}>
         {outline.parts.map((part) => <PartItem key={part.index} part={part} />)}
       </div>
