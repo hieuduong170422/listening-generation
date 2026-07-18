@@ -49,10 +49,7 @@ pages = {
         st.Page("views/home.py", title="Trang chủ", icon="🏠", url_path="home", default=True),
     ],
     "🎧 Podcast Studio": [
-        st.Page("views/podcast/unified_studio.py", title="Tạo Podcast (Unified)", icon="✨", url_path="podcast-unified"),
-        st.Page("views/podcast/elevenlabs_studio.py", title="Podcast (ElevenLabs)", icon="🎧", url_path="podcast-elevenlabs"),
-        st.Page("views/podcast/elevenlabs_history.py", title="ElevenLabs History", icon="📜", url_path="elevenlabs-history"),
-        st.Page("views/podcast/tts_settings.py", title="Cài đặt TTS", icon="⚙️", url_path="tts-settings"),
+        st.Page("views/podcast/studio.py", title="Podcast Studio", icon="🎧", url_path="podcast"),
     ],
     "🧩 Prompt Template Engine": [
         st.Page("views/prompt_template/home.py", title="Danh sách Template", icon="📋", url_path="templates"),
