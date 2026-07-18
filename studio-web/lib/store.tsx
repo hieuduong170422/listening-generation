@@ -3,12 +3,61 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useReducer,
   type ReactNode,
   type Dispatch,
 } from 'react'
 import type { Outline, StudioConfig } from './types'
 import { DEFAULT_CONFIG } from './types'
+
+// ── Persistence (localStorage) ────────────────────────────────────────────────
+
+const STORAGE_KEY = 'studio-state-v1'
+const PERSIST_DEBOUNCE_MS = 300
+
+interface PersistedState {
+  config: StudioConfig
+  outline: Outline | null
+  scripts: Record<number, string>
+  audioIds: Record<number, string>
+  selectedPart: number | null
+}
+
+function loadPersisted(): PersistedState | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw) as Partial<PersistedState>
+    if (!data || typeof data !== 'object') return null
+    // Dàn ý phải có mảng parts hợp lệ, nếu không coi như dữ liệu hỏng
+    if (data.outline && !Array.isArray(data.outline.parts)) return null
+    return {
+      config: { ...DEFAULT_CONFIG, ...(data.config ?? {}) },
+      outline: data.outline ?? null,
+      scripts: data.scripts ?? {},
+      audioIds: data.audioIds ?? {},
+      selectedPart: typeof data.selectedPart === 'number' ? data.selectedPart : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+function savePersisted(state: StudioState): void {
+  try {
+    const data: PersistedState = {
+      config: state.config,
+      outline: state.outline,
+      scripts: state.scripts,
+      audioIds: state.audioIds,
+      selectedPart: state.selectedPart,
+    }
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  } catch {
+    // Quota đầy / private mode — bỏ qua, app vẫn chạy bình thường
+  }
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -52,6 +101,7 @@ type Action =
   | { type: 'SET_RENDERING_AUDIO'; partIndex: number | null }
   | { type: 'SET_PROGRESS'; message: string | null }
   | { type: 'SET_ERROR'; message: string | null }
+  | { type: 'HYDRATE'; payload: PersistedState }
   | { type: 'RESET' }
 
 // ── Reducer ───────────────────────────────────────────────────────────────────
@@ -104,6 +154,9 @@ function reducer(state: StudioState, action: Action): StudioState {
     case 'SET_ERROR':
       return { ...state, error: action.message }
 
+    case 'HYDRATE':
+      return { ...state, ...action.payload }
+
     case 'RESET':
       return { ...initialState }
 
@@ -125,6 +178,19 @@ const StudioContext = createContext<StudioContextValue | null>(null)
 
 export function StudioProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState)
+
+  // Khôi phục sau F5 — chạy sau mount để tránh SSR hydration mismatch
+  useEffect(() => {
+    const saved = loadPersisted()
+    if (saved) dispatch({ type: 'HYDRATE', payload: saved })
+  }, [])
+
+  // Lưu localStorage mỗi khi dữ liệu chính đổi (debounce vì gõ script dispatch từng phím)
+  useEffect(() => {
+    const id = window.setTimeout(() => savePersisted(state), PERSIST_DEBOUNCE_MS)
+    return () => window.clearTimeout(id)
+  }, [state.config, state.outline, state.scripts, state.audioIds, state.selectedPart])
+
   return (
     <StudioContext.Provider value={{ state, dispatch }}>
       {children}
