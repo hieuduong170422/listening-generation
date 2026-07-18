@@ -5,6 +5,7 @@ import { useStudio } from '@/lib/store'
 import { useLang } from '@/lib/lang'
 import { fetchVoices, generateOutline, suggestTopics, ApiError } from '@/lib/api'
 import type { Voice, StudioConfig } from '@/lib/types'
+import VoicePicker from './VoicePicker'
 
 const LANGUAGES = [
   { value: 'vi', label: 'Tiếng Việt' },
@@ -301,21 +302,18 @@ export default function ConfigRail() {
                     style={{ ...s.input, flex: 1 }}
                   />
                 </div>
-                <select
+                <VoicePicker
+                  voices={voices}
                   value={cfg.host_voices[i] ?? ''}
-                  onChange={(e) => {
+                  onChange={(vid) => {
                     const vids = [...cfg.host_voices]
-                    vids[i] = e.target.value
+                    vids[i] = vid
                     patch({ host_voices: vids })
                   }}
-                  style={s.select}
-                  disabled={voicesLoading}
-                >
-                  <option value="">{voicesLoading ? t.loadingVoices : t.selectVoice}</option>
-                  {voices.map((v) => (
-                    <option key={v.voice_id} value={v.voice_id}>{v.name}</option>
-                  ))}
-                </select>
+                  loading={voicesLoading}
+                  currentStyle={cfg.style}
+                  placeholder={voicesLoading ? t.loadingVoices : t.selectVoice}
+                />
               </div>
             ))}
           </div>
