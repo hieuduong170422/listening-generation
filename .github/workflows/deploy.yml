@@ -98,7 +98,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
             "cd /opt/audivy && docker compose up -d"
 
-      - name: Reload nginx config
+      - name: Restart nginx to apply config
         run: |
           ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
-            "docker compose -f /opt/audivy/docker-compose.yml exec -T nginx nginx -s reload"
+            "cd /opt/audivy && docker compose restart nginx"
