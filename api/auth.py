@@ -4,14 +4,18 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import time
 from typing import Annotated
 
 from fastapi import Header, HTTPException, status
 
 log = logging.getLogger(__name__)
 
-# token → username
-_TOKEN_STORE: dict[str, str] = {}
+# Token sống 2 giờ — hết hạn buộc đăng nhập lại (đổi qua env TOKEN_TTL_SECONDS)
+TOKEN_TTL_SECONDS = int(os.getenv("TOKEN_TTL_SECONDS", str(2 * 3600)))
+
+# token → (username, expires_at epoch seconds)
+_TOKEN_STORE: dict[str, tuple[str, float]] = {}
 
 
 def _allowed_users() -> set[str]:
@@ -41,8 +45,8 @@ def verify_login(username: str, password: str) -> bool:
 
 def create_token(username: str) -> str:
     token = secrets.token_hex(32)
-    _TOKEN_STORE[token] = username.strip().lower()
-    log.info("Token created for user %r", username)
+    _TOKEN_STORE[token] = (username.strip().lower(), time.time() + TOKEN_TTL_SECONDS)
+    log.info("Token created for user %r (TTL %ds)", username, TOKEN_TTL_SECONDS)
     return token
 
 
@@ -66,8 +70,16 @@ def get_current_user(authorization: Annotated[str | None, Header()] = None) -> s
             detail="Invalid Authorization header format. Expected: Bearer <token>",
         )
     token = parts[1].strip()
-    username = _TOKEN_STORE.get(token)
-    if not username:
+    record = _TOKEN_STORE.get(token)
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+    username, expires_at = record
+    if time.time() >= expires_at:
+        _TOKEN_STORE.pop(token, None)
+        log.info("Token expired for user %r", username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

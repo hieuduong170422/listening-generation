@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { fetchSubscription } from '@/lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { fetchSubscription, fetchAudioBlobUrl, downloadAudioFile } from '@/lib/api'
 import { useLang } from '@/lib/lang'
 import { useStudio } from '@/lib/store'
 import {
@@ -237,53 +237,160 @@ function FragmentRow({
               backgroundColor: 'var(--bg1)',
               display: 'flex', flexDirection: 'column', gap: '0.375rem',
             }}>
-              {entry.outline.parts.map((part) => {
-                const hasScript = Boolean(entry.scripts[part.index])
-                const hasAudio = Boolean(entry.audioIds[part.index])
-                return (
-                  <div key={part.index} style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                    <span style={{
-                      width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0,
-                      backgroundColor: 'var(--bg3)', border: '1px solid var(--bd)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.625rem', fontWeight: 700, color: 'var(--t2)',
-                    }}>
-                      {part.index}
-                    </span>
-                    <span style={{
-                      flex: 1, minWidth: 0, fontSize: '0.8125rem', color: 'var(--t1)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {part.title}
-                    </span>
-                    <span style={{ display: 'flex', gap: '0.375rem', flexShrink: 0 }}>
-                      {hasScript && (
-                        <span style={{
-                          fontSize: '0.5625rem', fontWeight: 700,
-                          padding: '0.125rem 0.375rem', borderRadius: '3px',
-                          backgroundColor: 'rgba(107,95,227,0.1)',
-                          border: '1px solid rgba(107,95,227,0.2)',
-                          color: 'var(--accent)', textTransform: 'uppercase',
-                        }}>{t.scriptsBadge}</span>
-                      )}
-                      {hasAudio && (
-                        <span style={{
-                          fontSize: '0.5625rem', fontWeight: 700,
-                          padding: '0.125rem 0.375rem', borderRadius: '3px',
-                          backgroundColor: 'rgba(201,122,72,0.1)',
-                          border: '1px solid rgba(201,122,72,0.2)',
-                          color: 'var(--amber)', textTransform: 'uppercase',
-                        }}>{t.audioBadge}</span>
-                      )}
-                    </span>
-                  </div>
-                )
-              })}
+              {entry.outline.parts.map((part) => (
+                <HistoryPartRow
+                  key={part.index}
+                  index={part.index}
+                  title={part.title}
+                  script={entry.scripts[part.index] ?? ''}
+                  audioId={entry.audioIds[part.index] ?? ''}
+                />
+              ))}
             </div>
           </td>
         </tr>
       )}
     </>
+  )
+}
+
+// ── 1 part trong lịch sử: xem script, nghe lại + tải audio ────────────────────
+
+function HistoryPartRow({
+  index, title, script, audioId,
+}: { index: number; title: string; script: string; audioId: string }) {
+  const { t } = useLang()
+  const [open, setOpen] = useState(false)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [audioState, setAudioState] = useState<'idle' | 'loading' | 'missing'>('idle')
+  const [downloading, setDownloading] = useState(false)
+  const urlRef = useRef<string | null>(null)
+
+  const hasScript = Boolean(script)
+  const hasAudio = Boolean(audioId)
+  const openable = hasScript || hasAudio
+
+  // Tải audio khi mở panel; thu hồi blob URL khi đóng/unmount
+  useEffect(() => {
+    if (!open || !audioId) return
+    setAudioState('loading')
+    fetchAudioBlobUrl(audioId)
+      .then((url) => {
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+        urlRef.current = url
+        setAudioUrl(url)
+        setAudioState('idle')
+      })
+      .catch(() => setAudioState('missing'))
+  }, [open, audioId])
+
+  useEffect(() => {
+    return () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current) }
+  }, [])
+
+  async function handleDownload() {
+    if (!audioId || downloading) return
+    setDownloading(true)
+    try {
+      await downloadAudioFile(audioId, `part-${String(index).padStart(2, '0')}`)
+    } catch {
+      setAudioState('missing')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const badge = (label: string, color: string, bg: string, bd: string) => (
+    <span style={{
+      fontSize: '0.5625rem', fontWeight: 700,
+      padding: '0.125rem 0.375rem', borderRadius: '3px',
+      backgroundColor: bg, border: `1px solid ${bd}`,
+      color, textTransform: 'uppercase',
+    }}>{label}</span>
+  )
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+        <span style={{
+          width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0,
+          backgroundColor: open ? 'var(--accent)' : 'var(--bg3)',
+          border: '1px solid var(--bd)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '0.625rem', fontWeight: 700, color: open ? '#fff' : 'var(--t2)',
+        }}>
+          {index}
+        </span>
+        <span style={{
+          flex: 1, minWidth: 0, fontSize: '0.8125rem', color: 'var(--t1)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {title}
+        </span>
+        <span style={{ display: 'flex', gap: '0.375rem', flexShrink: 0, alignItems: 'center' }}>
+          {hasScript && badge(t.scriptsBadge, 'var(--accent)', 'rgba(107,95,227,0.1)', 'rgba(107,95,227,0.2)')}
+          {hasAudio && badge(t.audioBadge, 'var(--amber)', 'rgba(201,122,72,0.1)', 'rgba(201,122,72,0.2)')}
+          {hasAudio && (
+            <button
+              onClick={handleDownload}
+              disabled={downloading}
+              title={t.downloadOne}
+              style={{
+                padding: '0.125rem 0.4375rem',
+                backgroundColor: 'var(--bg3)', border: '1px solid var(--bd)',
+                borderRadius: '4px', color: downloading ? 'var(--t3)' : 'var(--t2)',
+                fontSize: '0.6875rem', cursor: downloading ? 'default' : 'pointer',
+              }}
+            >
+              ⬇
+            </button>
+          )}
+          {openable && (
+            <button
+              onClick={() => setOpen((o) => !o)}
+              style={{
+                padding: '0.125rem 0.4375rem',
+                backgroundColor: open ? 'var(--bg3)' : 'transparent',
+                border: '1px solid var(--bd)',
+                borderRadius: '4px', color: 'var(--t2)',
+                fontSize: '0.6875rem', cursor: 'pointer',
+              }}
+            >
+              {open ? t.histHide : t.histView}
+            </button>
+          )}
+        </span>
+      </div>
+
+      {open && (
+        <div style={{
+          margin: '0.375rem 0 0.25rem 2rem',
+          border: '1px solid var(--bd-s)', borderRadius: '6px',
+          backgroundColor: 'var(--bg2)', padding: '0.625rem 0.75rem',
+          display: 'flex', flexDirection: 'column', gap: '0.5rem',
+        }}>
+          {hasScript && (
+            <pre style={{
+              margin: 0, fontFamily: 'inherit', fontSize: '0.75rem',
+              color: 'var(--t2)', lineHeight: 1.6,
+              whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+              maxHeight: '220px', overflowY: 'auto',
+            }}>
+              {script}
+            </pre>
+          )}
+          {hasAudio && audioState === 'loading' && (
+            <div style={{ fontSize: '0.75rem', color: 'var(--t3)' }}>{t.loadingAudio}</div>
+          )}
+          {hasAudio && audioState === 'missing' && (
+            <div style={{ fontSize: '0.75rem', color: 'var(--amber)' }}>{t.audioGone}</div>
+          )}
+          {audioUrl && audioState === 'idle' && (
+            <audio controls src={audioUrl} style={{ width: '100%', height: '34px', accentColor: 'var(--amber)' }} />
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

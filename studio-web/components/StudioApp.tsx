@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { clearToken } from '@/lib/api'
-import { useRouter } from 'next/navigation'
+import { clearStudioState } from '@/lib/storage'
 import { useStudio } from '@/lib/store'
 import { useLang } from '@/lib/lang'
 import ConfigRail from './ConfigRail'
@@ -98,14 +98,15 @@ function ToolsMenu({ label }: { label: string }) {
 }
 
 export default function StudioApp() {
-  const router = useRouter()
   const { state } = useStudio()
   const { t, toggleLang } = useLang()
   const [tab, setTab] = useState<Tab>('studio')
 
   function handleLogout() {
     clearToken()
-    router.replace('/login')
+    clearStudioState()
+    // Full reload để wipe cả state trong bộ nhớ; lịch sử server-side vẫn giữ
+    window.location.href = '/login'
   }
 
   const hasOutline = Boolean(state.outline)

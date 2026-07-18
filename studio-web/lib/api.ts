@@ -6,6 +6,7 @@ import type {
   Outline,
   StudioConfig,
 } from './types'
+import { clearStudioState } from './storage'
 
 const TOKEN_KEY = 'studio_token'
 
@@ -59,6 +60,16 @@ export async function authFetch(
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(path, { ...options, headers })
+  if (res.status === 401) {
+    // Token hết hạn (TTL 2h) hoặc không hợp lệ → logout: xoá token + data phiên,
+    // lịch sử server-side vẫn còn nguyên theo tài khoản.
+    clearToken()
+    clearStudioState()
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login'
+    }
+    throw new ApiError(res.status, await parseError(res))
+  }
   if (!res.ok) {
     throw new ApiError(res.status, await parseError(res))
   }

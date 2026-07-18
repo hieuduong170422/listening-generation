@@ -14,7 +14,8 @@ import { upsertOutlineEntry, type OutlineHistoryEntry } from './history'
 
 // ── Persistence (localStorage) ────────────────────────────────────────────────
 
-const STORAGE_KEY = 'studio-state-v1'
+import { STUDIO_STATE_KEY as STORAGE_KEY } from './storage'
+
 const PERSIST_DEBOUNCE_MS = 300
 const REMOTE_SYNC_DEBOUNCE_MS = 1200
 

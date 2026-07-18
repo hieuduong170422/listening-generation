@@ -63,6 +63,9 @@ export type T = {
   outlineHistoryTitle: string
   outlineHistoryNote: string
   outlineHistoryEmpty: string
+  histView: string
+  histHide: string
+  audioGone: string
   colTopic: string
   colUser: string
   colDate: string
@@ -146,6 +149,9 @@ const vi: T = {
   outlineHistoryTitle: 'Dàn ý đã tạo (7 ngày gần nhất)',
   outlineHistoryNote: 'Lưu trên server theo tài khoản, tự xoá sau 7 ngày. Bấm vào chủ đề để xem các phần.',
   outlineHistoryEmpty: 'Chưa có dàn ý nào được lưu.',
+  histView: 'Xem',
+  histHide: 'Đóng',
+  audioGone: 'Audio không còn trên server (server đã restart) — vào Mở để render lại.',
   colTopic: 'Chủ đề',
   colUser: 'Người tạo',
   colDate: 'Cập nhật',
@@ -229,6 +235,9 @@ const en: T = {
   outlineHistoryTitle: 'Generated outlines (last 7 days)',
   outlineHistoryNote: 'Stored server-side per account, auto-deleted after 7 days. Click a topic to see its parts.',
   outlineHistoryEmpty: 'No saved outlines yet.',
+  histView: 'View',
+  histHide: 'Close',
+  audioGone: 'Audio no longer on the server (it restarted) — use Open to re-render.',
   colTopic: 'Topic',
   colUser: 'Creator',
   colDate: 'Updated',
