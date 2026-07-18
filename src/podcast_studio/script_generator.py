@@ -153,6 +153,8 @@ def generate_part_script(
     key_points: tuple[str, ...],
     previous_part_titles: tuple[str, ...] = (),
     previous_tail_lines: tuple[str, ...] = (),
+    next_part_title: str = "",
+    next_part_summary: str = "",
     text_model: str = TEXT_MODEL,
     audience_level: str = DEFAULT_AUDIENCE,
     tone: str = DEFAULT_TONE,
@@ -191,6 +193,16 @@ def generate_part_script(
     is_first = part_index == 1
     is_last = part_index == total_parts
 
+    # Nếu biết part kế tiếp, câu chuyển cảnh phải hướng đúng chủ đề đó
+    next_topic_hint = ""
+    if not is_last and next_part_title:
+        next_topic_hint = (
+            f' The NEXT sub-topic (do NOT cover it yet) is: "{next_part_title}"'
+            + (f" — {next_part_summary}" if next_part_summary else "")
+            + ". Steer the final 1-2 turns naturally TOWARD that sub-topic so the next part "
+            "can pick up seamlessly mid-conversation."
+        )
+
     if continuous:
         if is_first:
             intro_rule = (
@@ -202,6 +214,7 @@ def generate_part_script(
                 "Do NOT include any sign-off. Do NOT say 'see you next time', 'bye for now', "
                 "'thanks for listening', or 'in the next part'. The conversation should feel like it just "
                 "naturally continues — the listener should feel curious, not concluded."
+                + next_topic_hint
             )
         elif is_last:
             intro_rule = (
@@ -228,6 +241,7 @@ def generate_part_script(
                 "End MID-CONVERSATION transitioning naturally into the next sub-topic. "
                 "Do NOT include any sign-off. Do NOT say 'see you next time', 'bye for now', "
                 "'thanks for listening', or 'in the next part'. Conversation just keeps flowing."
+                + next_topic_hint
             )
     else:
         intro_rule = (
@@ -238,7 +252,10 @@ def generate_part_script(
         outro_rule = (
             "Close with a strong final takeaway and a friendly sign-off thanking the audience."
             if is_last
-            else f"Close with a 1-2 sentence recap of THIS part and a teaser for Part {part_index + 1}."
+            else (
+                f"Close with a 1-2 sentence recap of THIS part and a teaser for Part {part_index + 1}."
+                + next_topic_hint
+            )
         )
 
     if continuous and previous_tail_lines:

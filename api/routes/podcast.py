@@ -226,7 +226,12 @@ async def generate_script(
         prev_key = str(body.part_index - 1)
         prev_text = body.previous_scripts.get(prev_key, "")
         if prev_text:
-            previous_tail_lines = extract_tail_lines(prev_text, n=6)
+            previous_tail_lines = extract_tail_lines(prev_text, n=8)
+
+    # Part kế tiếp (nếu có) — để câu chuyển cảnh hướng đúng chủ đề
+    next_part = (
+        outline.parts[body.part_index] if body.part_index < total_parts else None
+    )
 
     minutes_per_part = (
         outline.total_minutes // total_parts if total_parts else outline.total_minutes
@@ -248,6 +253,8 @@ async def generate_script(
                 key_points=part.key_points,
                 previous_part_titles=previous_part_titles,
                 previous_tail_lines=previous_tail_lines,
+                next_part_title=next_part.title if next_part else "",
+                next_part_summary=next_part.summary if next_part else "",
                 text_model=body.text_model,
                 audience_level=body.audience_level,
                 tone=body.tone,
