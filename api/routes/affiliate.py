@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from api.auth import get_current_user
+from podcast_studio import drive_upload
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -61,6 +62,17 @@ def _find_session_result(session_id: str) -> dict | None:
         if result and result.get("session_id") == session_id:
             return result
     return None
+
+
+def _drive_product_name(sess_dir: Path) -> str:
+    """Tên folder Drive = 'Mô tả sản phẩm' user nhập (idea.txt); fallback product.txt."""
+    for fname in ("idea.txt", "product.txt"):
+        f = sess_dir / fname
+        if f.exists():
+            text = f.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+    return sess_dir.name  # session id — trường hợp bất thường
 
 
 def _load_product_images(session_id: str) -> list[tuple[bytes, str]]:
@@ -116,6 +128,9 @@ def _bg_storyboard(
         prod_dir.mkdir(parents=True, exist_ok=True)
         for i, (data, _) in enumerate(product_images):
             (prod_dir / f"product_{i}.png").write_bytes(data)
+
+        # Lưu mô tả sản phẩm user nhập — dùng đặt tên folder Drive khi upload video
+        (sess_dir / "idea.txt").write_text(idea.strip(), encoding="utf-8")
 
         _JOBS[job_id]["progress"] = 0.05
 
@@ -240,10 +255,24 @@ def _bg_clip(
         # Mark clip as rendered in the shared storyboard result
         item["has_video"] = True
 
+        # Tự upload lên Drive: affiliate/<mô tả sản phẩm>/ (best-effort, lỗi không fail job)
+        drive_link = None
+        if drive_upload.is_enabled():
+            _JOBS[job_id]["message"] = "Uploading clip lên Google Drive..."
+            drive_link = drive_upload.upload_video_for_product(
+                clip_path,
+                _drive_product_name(sess_dir),
+                filename=f"clip_{clip_index + 1}_{session_id[:8]}.mp4",
+            )
+
         _JOBS[job_id]["status"] = "done"
         _JOBS[job_id]["progress"] = 1.0
         _JOBS[job_id]["message"] = f"Clip {clip_index} rendered"
-        _JOBS[job_id]["result"] = {"session_id": session_id, "clip_index": clip_index}
+        _JOBS[job_id]["result"] = {
+            "session_id": session_id,
+            "clip_index": clip_index,
+            "drive_link": drive_link,
+        }
 
     except Exception as exc:
         log.exception("_bg_clip failed for job %s clip %d", job_id, clip_index)
@@ -317,12 +346,23 @@ def _bg_stitch(
         _JOBS[job_id]["progress"] = 0.88
 
         final_bytes = _stitch_videos(all_clips)
-        (sess_dir / "final.mp4").write_bytes(final_bytes)
+        final_path = sess_dir / "final.mp4"
+        final_path.write_bytes(final_bytes)
+
+        # Tự upload video hoàn chỉnh lên Drive: affiliate/<mô tả sản phẩm>/
+        drive_link = None
+        if drive_upload.is_enabled():
+            _JOBS[job_id]["message"] = "Uploading video lên Google Drive..."
+            drive_link = drive_upload.upload_video_for_product(
+                final_path,
+                _drive_product_name(sess_dir),
+                filename=f"final_{session_id[:8]}.mp4",
+            )
 
         _JOBS[job_id]["status"] = "done"
         _JOBS[job_id]["progress"] = 1.0
         _JOBS[job_id]["message"] = "Final video ready"
-        _JOBS[job_id]["result"] = {"session_id": session_id}
+        _JOBS[job_id]["result"] = {"session_id": session_id, "drive_link": drive_link}
 
     except Exception as exc:
         log.exception("_bg_stitch failed for job %s", job_id)
