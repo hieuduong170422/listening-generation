@@ -52,7 +52,21 @@ jobs:
       - name: Check what changed
         id: changed
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          # So với commit trước push (không phải HEAD~1) để push nhiều commit
+          # một lần không bị sót thay đổi; force-push/push đầu thì fallback.
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || echo "$BEFORE" | grep -q '^0*$' || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            BEFORE="HEAD~1"
+          fi
+          CHANGED=$(git diff --name-only "$BEFORE" HEAD)
+
+          # Backend Python (api/ + src/) mount qua volume — chỉ cần restart
+          # container là nhận code mới, không cần rebuild image.
+          if echo "$CHANGED" | grep -qE '^(api/|src/)'; then
+            echo "restart_api=true" >> $GITHUB_OUTPUT
+          else
+            echo "restart_api=false" >> $GITHUB_OUTPUT
+          fi
 
           # Rebuild Streamlit Docker nếu requirements/Dockerfile thay đổi
           if echo "$CHANGED" | grep -qE '^(Dockerfile|requirements\.txt)$'; then
@@ -97,6 +111,14 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
             "cd /opt/audivy && docker compose up -d"
+
+      - name: Restart API (apply code-only changes)
+        if: steps.changed.outputs.restart_api == 'true'
+        run: |
+          # up -d không recreate khi image không đổi; code Python mount volume
+          # nên phải restart mới nạp bản mới. Token nằm SQLite → user không bị logout.
+          ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
+            "cd /opt/audivy && docker compose restart podcast-api"
 
       - name: Restart nginx to apply config
         run: |
