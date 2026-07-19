@@ -77,9 +77,18 @@ async def lifespan(app: FastAPI):
         client = genai.Client(
             vertexai=True, project=project, location=location, credentials=creds
         )
-        log.info("Gemini client initialised via Vertex AI (project=%s)", project)
+        # Client thứ hai trỏ global endpoint — bể dynamic shared quota lớn hơn
+        # nhiều so với 1 region, dùng cho text + sinh ảnh (Veo vẫn cần region).
+        client_global = genai.Client(
+            vertexai=True, project=project, location="global", credentials=creds
+        )
+        log.info(
+            "Gemini client initialised via Vertex AI (project=%s, location=%s + global)",
+            project, location,
+        )
     elif api_key:
         client = genai.Client(api_key=api_key)
+        client_global = client
         log.info("Gemini client initialised via API key …%s", api_key[-4:])
     else:
         log.warning(
@@ -88,8 +97,10 @@ async def lifespan(app: FastAPI):
             "Set GEMINI_API_KEY or enable GOOGLE_GENAI_USE_VERTEXAI=true with GOOGLE_CLOUD_PROJECT."
         )
         client = None  # type: ignore[assignment]
+        client_global = None  # type: ignore[assignment]
 
     app.state.genai_client = client
+    app.state.genai_client_global = client_global
     yield
     log.info("API shutdown")
 

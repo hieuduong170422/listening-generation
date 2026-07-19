@@ -347,7 +347,12 @@ async def start_storyboard(
     directions: str = Form(default=""),
 ) -> dict:
     """Upload product images and kick off storyboard generation."""
-    client = request.app.state.genai_client
+    # Storyboard chỉ gọi text + sinh ảnh → dùng global endpoint (quota rộng hơn
+    # hẳn 1 region, đỡ 429 RESOURCE_EXHAUSTED). Veo ở /clip vẫn dùng client region.
+    client = (
+        getattr(request.app.state, "genai_client_global", None)
+        or request.app.state.genai_client
+    )
 
     if not images:
         raise HTTPException(
