@@ -7,6 +7,8 @@
 """
 
 import os
+import threading
+import time
 
 from google import genai
 from google.genai import types
@@ -14,6 +16,30 @@ from google.genai import types
 from podcast_studio.api_utils import call_with_retry, track_response
 
 TEXT_MODEL = "gemini-2.5-flash"
+
+# ── Điều tốc sinh ảnh — quota RPM của gemini-2.5-flash-image rất thấp ─────────
+# Mọi request sinh ảnh trong process này (kể cả retry, kể cả nhiều job song
+# song) phải cách nhau tối thiểu _IMAGE_MIN_INTERVAL giây; bắn dày hơn là tự
+# dẫm trần RPM → 429 dây chuyền không bao giờ hồi.
+_IMAGE_GATE = threading.Lock()
+_IMAGE_MIN_INTERVAL = 6.0
+_image_next_slot = 0.0
+
+# Retry giãn dài cho call sinh ảnh: 12s → 24s → 48s → 60s… cho quota phút hồi
+_IMAGE_RETRY = {"max_attempts": 6, "base_delay": 12.0, "max_delay": 60.0}
+
+
+def _paced_generate(func, *args, **kwargs):
+    """Gọi func nhưng giữ khoảng cách tối thiểu giữa các request sinh ảnh."""
+    global _image_next_slot
+    with _IMAGE_GATE:
+        now = time.monotonic()
+        start = max(now, _image_next_slot)
+        _image_next_slot = start + _IMAGE_MIN_INTERVAL
+    delay = start - now
+    if delay > 0:
+        time.sleep(delay)
+    return func(*args, **kwargs)
 VEO_MODEL = "veo-3.1-generate-preview"          # Gemini Developer API (key trả phí)
 VEO_VERTEX_MODEL = "veo-3.1-generate-001"        # Vertex AI — Veo 3.1 (tên GA khác Developer API)
 
@@ -222,6 +248,7 @@ def generate_storyboard_banana(
     contents.append(instruction)
 
     response = call_with_retry(
+        _paced_generate,
         client.models.generate_content,
         model=model,
         contents=contents,
@@ -232,6 +259,7 @@ def generate_storyboard_banana(
                 image_size=STORYBOARD_IMAGE_SIZE,
             ),
         ),
+        **_IMAGE_RETRY,
     )
     track_response(None, response, "image")
     return _extract_genai_image(response)
@@ -280,6 +308,7 @@ def _scene_image_banana(
         contents += _image_parts(scene_images[:MAX_REF_IMAGES])
     contents.append(instruction)
     resp = call_with_retry(
+        _paced_generate,
         client.models.generate_content,
         model=model,
         contents=contents,
@@ -289,6 +318,7 @@ def _scene_image_banana(
                 aspect_ratio=STORYBOARD_ASPECT_RATIO, image_size=STORYBOARD_IMAGE_SIZE,
             ),
         ),
+        **_IMAGE_RETRY,
     )
     track_response(None, resp, "image")
     return _remove_letterbox(_extract_genai_image(resp))  # bỏ viền đen → frame full 9:16 cho Veo
@@ -447,10 +477,12 @@ def _isolate_product(
     )
     try:
         resp = call_with_retry(
+            _paced_generate,
             client.models.generate_content,
             model=model,
             contents=_image_parts([image]) + [instruction],
             config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+            **_IMAGE_RETRY,
         )
         return _extract_genai_image(resp), "image/png"
     except Exception:
