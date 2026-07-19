@@ -510,7 +510,8 @@ def generate_storyboard_imagen(
     def _one(scene: str) -> bytes:
         return _imagen_scene(client, product_images=clean_products, subject_desc=product, scene=scene)
 
-    with ThreadPoolExecutor(max_workers=min(4, len(steps))) as ex:
+    # max_workers=2: tránh dội 429 RESOURCE_EXHAUSTED lên quota chia sẻ Vertex
+    with ThreadPoolExecutor(max_workers=min(2, len(steps))) as ex:
         panel_imgs = list(ex.map(_one, steps))
     return _compose_grid(panel_imgs, cols=2)
 
@@ -963,9 +964,11 @@ def generate_storyboard_set(
         clips=clips, beats_per_clip=beats_per_clip, directions=directions,
     )
 
-    # Sinh 1 frame cho MỖI cảnh (phẳng, song song) — chính là frame Veo sẽ dùng.
+    # Sinh 1 frame cho MỖI cảnh — chính là frame Veo sẽ dùng.
+    # max_workers=2: quota Vertex là dynamic shared quota, bắn 6-8 request ảnh
+    # cùng lúc là dính 429 RESOURCE_EXHAUSTED cả loạt (retry cũng đụng nhau).
     flat = [scene for g in groups for scene in g]
-    with ThreadPoolExecutor(max_workers=min(8, len(flat) or 1)) as ex:
+    with ThreadPoolExecutor(max_workers=min(2, len(flat) or 1)) as ex:
         frames_flat = list(ex.map(
             lambda s: _scene_image_banana(
                 client, product_images=product_images, scene_images=scene_images,
@@ -1028,6 +1031,7 @@ def generate_clip_from_storyboard(
     indexed = list(enumerate(scenes))
     if len(scenes) == 1:
         return _scene_clip(indexed[0])
-    with ThreadPoolExecutor(max_workers=len(scenes)) as ex:
+    # max_workers=2: Veo quota Vertex rất chặt — chạy hết cảnh song song là 429
+    with ThreadPoolExecutor(max_workers=min(2, len(scenes))) as ex:
         sub_clips = list(ex.map(_scene_clip, indexed))
     return _stitch_videos(sub_clips)
