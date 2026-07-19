@@ -29,6 +29,10 @@ jobs:
         run: |
           echo "${{ secrets.ENV_FILE }}" | ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
             "cat > /opt/audivy/.env"
+          # Folder Drive nhận video affiliate (không phải secret) — giữ qua mỗi
+          # lần ghi đè .env từ ENV_FILE; nếu secret đã có dòng này thì bỏ qua.
+          ssh -i ~/.ssh/id_ed25519 root@34.124.248.163 \
+            "grep -q '^AFFILIATE_DRIVE_FOLDER_ID=' /opt/audivy/.env || echo 'AFFILIATE_DRIVE_FOLDER_ID=1f10KKSk6uxOwZ5JI1Grg0Fqrps112k4V' >> /opt/audivy/.env"
 
       - name: Sync code to server
         run: |
