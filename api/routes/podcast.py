@@ -101,6 +101,15 @@ class AudioResponse(BaseModel):
     audio_id: str
 
 
+class SubtitleRequest(BaseModel):
+    audio_id: str
+    language: str = "vi"
+
+
+class SubtitleResponse(BaseModel):
+    srt: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -379,3 +388,53 @@ def get_audio(
         media_type=media_type,
         filename=f"podcast_part_{audio_id}{suffix}",
     )
+
+
+def _resolve_audio_path(audio_id: str) -> Path | None:
+    """Tìm file audio theo id: ưu tiên _AUDIO_STORE, fallback file trên disk."""
+    path = _AUDIO_STORE.get(audio_id)
+    if path and path.exists():
+        return path
+    for suffix in (".wav", ".mp3"):
+        candidate = _audio_dir() / f"{audio_id}{suffix}"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+@router.post("/subtitle", response_model=SubtitleResponse)
+async def generate_subtitle(
+    body: SubtitleRequest,
+    current_user: Annotated[str, Depends(get_current_user)],
+) -> SubtitleResponse:
+    """Tạo phụ đề .srt từ audio đã render bằng Whisper (chạy local, không tốn credit)."""
+    audio_path = _resolve_audio_path(body.audio_id)
+    if audio_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Audio {body.audio_id!r} không tìm thấy (có thể đã mất sau khi "
+                "server restart). Hãy render lại audio trước khi tạo phụ đề."
+            ),
+        )
+
+    from podcast_studio.whisper_transcribe import transcribe, transcript_to_srt
+
+    loop = asyncio.get_event_loop()
+    try:
+        srt = await loop.run_in_executor(
+            None,
+            lambda: transcript_to_srt(
+                transcribe(audio_path, language=body.language or "vi", model_size="medium")
+            ),
+        )
+    except Exception as exc:
+        log.exception(
+            "Subtitle gen failed for user %r, audio_id=%s", current_user, body.audio_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Subtitle generation failed: {exc}",
+        ) from exc
+
+    return SubtitleResponse(srt=srt)

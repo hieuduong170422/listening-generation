@@ -60,6 +60,14 @@ export type T = {
   allAudioDone: string
   selectVoiceFirst: string
   finishScriptsFirst: string
+  genSubtitle: string
+  reGenSubtitle: string
+  subtitling: string
+  downloadSrt: string
+  genAllSubtitles: string
+  subtitlingPart: string
+  allSubtitlesDone: string
+  subtitleBadge: string
   outlineHistoryTitle: string
   outlineHistoryNote: string
   outlineHistoryEmpty: string
@@ -146,6 +154,14 @@ const vi: T = {
   allAudioDone: 'Các phần có script đều đã có audio',
   selectVoiceFirst: 'Chọn giọng TTS ở menu trái trước khi tạo audio',
   finishScriptsFirst: 'Hãy tạo xong script cho tất cả các phần trước khi tạo audio',
+  genSubtitle: '📄 Tạo phụ đề',
+  reGenSubtitle: '↺ Tạo lại phụ đề',
+  subtitling: 'Đang tạo phụ đề…',
+  downloadSrt: '⬇ Tải .srt',
+  genAllSubtitles: '📄 Tạo tất cả phụ đề',
+  subtitlingPart: 'Đang tạo phụ đề phần',
+  allSubtitlesDone: 'Các phần có audio đều đã có phụ đề',
+  subtitleBadge: 'sub',
   outlineHistoryTitle: 'Dàn ý đã tạo (7 ngày gần nhất)',
   outlineHistoryNote: 'Lưu trên server theo tài khoản, tự xoá sau 7 ngày. Bấm vào chủ đề để xem các phần.',
   outlineHistoryEmpty: 'Chưa có dàn ý nào được lưu.',
@@ -232,6 +248,14 @@ const en: T = {
   allAudioDone: 'Every scripted part already has audio',
   selectVoiceFirst: 'Select a TTS voice in the left menu first',
   finishScriptsFirst: 'Finish generating scripts for every part before rendering audio',
+  genSubtitle: '📄 Subtitles',
+  reGenSubtitle: '↺ Re-gen subtitles',
+  subtitling: 'Subtitling…',
+  downloadSrt: '⬇ Download .srt',
+  genAllSubtitles: '📄 Subtitle all',
+  subtitlingPart: 'Subtitling part',
+  allSubtitlesDone: 'Every part with audio already has subtitles',
+  subtitleBadge: 'sub',
   outlineHistoryTitle: 'Generated outlines (last 7 days)',
   outlineHistoryNote: 'Stored server-side per account, auto-deleted after 7 days. Click a topic to see its parts.',
   outlineHistoryEmpty: 'No saved outlines yet.',

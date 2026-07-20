@@ -227,6 +227,34 @@ export async function downloadAudioFile(audioId: string, baseName: string): Prom
   URL.revokeObjectURL(url)
 }
 
+// ── Subtitles ─────────────────────────────────────────────────────────────────
+
+export async function generateSubtitle(params: {
+  audioId: string
+  language: string
+  signal?: AbortSignal
+}): Promise<{ srt: string }> {
+  const res = await authFetch('/api/podcast/subtitle', {
+    method: 'POST',
+    body: JSON.stringify({ audio_id: params.audioId, language: params.language }),
+    signal: params.signal,
+  })
+  return res.json() as Promise<{ srt: string }>
+}
+
+/** Tải một chuỗi văn bản về máy dưới dạng file (dùng cho .srt). */
+export function downloadTextFile(content: string, filename: string): void {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 // ── Suggest topics ────────────────────────────────────────────────────────────
 
 export async function suggestTopics(params: {

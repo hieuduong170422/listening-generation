@@ -25,6 +25,7 @@ interface PersistedState {
   outlineId: string | null
   scripts: Record<number, string>
   audioIds: Record<number, string>
+  subtitles: Record<number, string>
   selectedPart: number | null
 }
 
@@ -48,6 +49,7 @@ function loadPersisted(): PersistedState | null {
       outlineId: typeof data.outlineId === 'string' ? data.outlineId : null,
       scripts: data.scripts ?? {},
       audioIds: data.audioIds ?? {},
+      subtitles: data.subtitles ?? {},
       selectedPart: typeof data.selectedPart === 'number' ? data.selectedPart : null,
     }
   } catch {
@@ -63,6 +65,7 @@ function savePersisted(state: StudioState): void {
       outlineId: state.outlineId,
       scripts: state.scripts,
       audioIds: state.audioIds,
+      subtitles: state.subtitles,
       selectedPart: state.selectedPart,
     }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -79,6 +82,7 @@ export interface StudioState {
   outlineId: string | null             // id ổn định của dàn ý hiện tại (cho history)
   scripts: Record<number, string>      // part_index → script text
   audioIds: Record<number, string>     // part_index → audio_id
+  subtitles: Record<number, string>    // part_index → nội dung .srt
   selectedPart: number | null
   isGeneratingOutline: boolean
   generatingScript: number | null      // which part index
@@ -93,6 +97,7 @@ const initialState: StudioState = {
   outlineId: null,
   scripts: {},
   audioIds: {},
+  subtitles: {},
   selectedPart: null,
   isGeneratingOutline: false,
   generatingScript: null,
@@ -110,6 +115,7 @@ type Action =
   | { type: 'LOAD_SNAPSHOT'; entry: OutlineHistoryEntry }
   | { type: 'SET_SCRIPT'; partIndex: number; text: string }
   | { type: 'SET_AUDIO_ID'; partIndex: number; audioId: string }
+  | { type: 'SET_SUBTITLE'; partIndex: number; srt: string }
   | { type: 'SELECT_PART'; partIndex: number | null }
   | { type: 'SET_GENERATING_OUTLINE'; value: boolean }
   | { type: 'SET_GENERATING_SCRIPT'; partIndex: number | null }
@@ -136,6 +142,7 @@ function reducer(state: StudioState, action: Action): StudioState {
         outlineId: action.outlineId,
         scripts: {},
         audioIds: {},
+        subtitles: {},
         selectedPart: null,
         error: null,
       }
@@ -148,6 +155,7 @@ function reducer(state: StudioState, action: Action): StudioState {
         outlineId: action.entry.id,
         scripts: action.entry.scripts,
         audioIds: action.entry.audioIds,
+        subtitles: action.entry.subtitles ?? {},
         selectedPart: null,
         error: null,
       }
@@ -162,6 +170,12 @@ function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         audioIds: { ...state.audioIds, [action.partIndex]: action.audioId },
+      }
+
+    case 'SET_SUBTITLE':
+      return {
+        ...state,
+        subtitles: { ...state.subtitles, [action.partIndex]: action.srt },
       }
 
     case 'SELECT_PART':
@@ -231,10 +245,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         outline,
         scripts: state.scripts,
         audioIds: state.audioIds,
+        subtitles: state.subtitles,
       }).catch(() => { /* offline/hết phiên — lần đổi kế tiếp sẽ sync lại */ })
     }, REMOTE_SYNC_DEBOUNCE_MS)
     return () => window.clearTimeout(id)
-  }, [state.config, state.outline, state.outlineId, state.scripts, state.audioIds])
+  }, [state.config, state.outline, state.outlineId, state.scripts, state.audioIds, state.subtitles])
 
   return (
     <StudioContext.Provider value={{ state, dispatch }}>

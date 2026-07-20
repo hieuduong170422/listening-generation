@@ -3,18 +3,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStudio } from '@/lib/store'
 import { useLang } from '@/lib/lang'
-import { generateScript, renderAudio, fetchAudioBlobUrl, downloadAudioFile, ApiError } from '@/lib/api'
+import { generateScript, renderAudio, fetchAudioBlobUrl, downloadAudioFile, generateSubtitle, downloadTextFile, ApiError } from '@/lib/api'
 import type { PartBrief } from '@/lib/types'
 
 function PartItem({ part }: { part: PartBrief }) {
   const { state, dispatch } = useStudio()
   const { t } = useLang()
-  const { config, scripts, audioIds, generatingScript, renderingAudio } = state
+  const { config, scripts, audioIds, subtitles, generatingScript, renderingAudio } = state
 
   const isExpanded = state.selectedPart === part.index
   const scriptText = scripts[part.index] ?? ''
   const hasScript = Boolean(scriptText)
   const hasAudio = Boolean(audioIds[part.index])
+  const hasSubtitle = Boolean(subtitles[part.index])
   const isGenerating = generatingScript === part.index
   const isRendering = renderingAudio === part.index
 
@@ -22,6 +23,7 @@ function PartItem({ part }: { part: PartBrief }) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [audioLoading, setAudioLoading] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [subtitling, setSubtitling] = useState(false)
   const prevAudioRef = useRef<string | null>(null)
 
   useEffect(() => { setLocalScript(scriptText) }, [scriptText])
@@ -105,6 +107,27 @@ function PartItem({ part }: { part: PartBrief }) {
     }
   }
 
+  async function handleGenerateSubtitle() {
+    const aid = audioIds[part.index]
+    if (!aid || subtitling) return
+    setSubtitling(true)
+    dispatch({ type: 'SET_ERROR', message: null })
+    try {
+      const res = await generateSubtitle({ audioId: aid, language: config.language })
+      dispatch({ type: 'SET_SUBTITLE', partIndex: part.index, srt: res.srt })
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', message: err instanceof ApiError ? err.message : 'Subtitle generation failed' })
+    } finally {
+      setSubtitling(false)
+    }
+  }
+
+  function handleDownloadSubtitle() {
+    const srt = subtitles[part.index]
+    if (!srt) return
+    downloadTextFile(srt, `part-${String(part.index).padStart(2, '0')}.srt`)
+  }
+
   const busy = isGenerating || isRendering
   const otherGenerating = generatingScript !== null && !isGenerating
   const otherRendering = renderingAudio !== null && !isRendering
@@ -180,6 +203,15 @@ function PartItem({ part }: { part: PartBrief }) {
               border: '1px solid rgba(201,122,72,0.2)',
               color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '0.04em',
             }}>{t.audioBadge}</span>
+          )}
+          {hasSubtitle && !isExpanded && (
+            <span style={{
+              fontSize: '0.5625rem', fontWeight: 700,
+              padding: '0.125rem 0.375rem', borderRadius: '3px',
+              backgroundColor: 'rgba(90,170,120,0.12)',
+              border: '1px solid rgba(90,170,120,0.25)',
+              color: 'var(--ok)', textTransform: 'uppercase', letterSpacing: '0.04em',
+            }}>{t.subtitleBadge}</span>
           )}
           <span style={{
             fontSize: '0.8125rem', color: 'var(--t3)',
@@ -308,6 +340,43 @@ function PartItem({ part }: { part: PartBrief }) {
               </button>
             )}
           </div>
+
+          {/* Subtitle row — chỉ khi part đã có audio */}
+          {hasAudio && (
+            <div style={{
+              display: 'flex', gap: '0.5rem', padding: '0 1rem 0.625rem',
+              backgroundColor: 'var(--bg1)',
+            }}>
+              <button
+                onClick={handleGenerateSubtitle}
+                disabled={subtitling}
+                style={{
+                  flex: 1, padding: '0.5rem',
+                  backgroundColor: 'var(--bg3)',
+                  border: '1px solid var(--bd)', borderRadius: '6px',
+                  color: subtitling ? 'var(--t3)' : 'var(--t2)',
+                  fontSize: '0.8125rem', fontWeight: 600,
+                  cursor: subtitling ? 'default' : 'pointer',
+                }}
+              >
+                {subtitling ? t.subtitling : hasSubtitle ? t.reGenSubtitle : t.genSubtitle}
+              </button>
+              {hasSubtitle && (
+                <button
+                  onClick={handleDownloadSubtitle}
+                  style={{
+                    flexShrink: 0, padding: '0.5rem 0.75rem',
+                    backgroundColor: 'var(--bg3)',
+                    border: '1px solid var(--bd)', borderRadius: '6px',
+                    color: 'var(--t2)',
+                    fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  {t.downloadSrt}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -317,25 +386,33 @@ function PartItem({ part }: { part: PartBrief }) {
 export default function PartList() {
   const { state, dispatch } = useStudio()
   const { t } = useLang()
-  const { outline, scripts, audioIds, config, generatingScript, renderingAudio } = state
+  const { outline, scripts, audioIds, subtitles, config, generatingScript, renderingAudio } = state
 
   const [batchRunning, setBatchRunning] = useState(false)
   const [renderAllRunning, setRenderAllRunning] = useState(false)
   const [downloadingAll, setDownloadingAll] = useState(false)
+  const [subAllRunning, setSubAllRunning] = useState(false)
+  const [subAllPart, setSubAllPart] = useState<number | null>(null)
   const cancelRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
   const cancelAudioRef = useRef(false)
   const abortAudioRef = useRef<AbortController | null>(null)
+  const cancelSubRef = useRef(false)
 
   if (!outline) return null
 
   const totalParts = outline.parts.length
   const doneScripts = Object.keys(scripts).length
   const doneAudio = Object.keys(audioIds).length
+  const doneSubtitles = Object.keys(subtitles).length
   const allDone = doneScripts >= totalParts
   // Part đủ điều kiện render audio: đã có script, chưa có audio
   const audioPending = outline.parts.filter(
     (p) => scripts[p.index]?.trim() && !audioIds[p.index],
+  ).length
+  // Part đủ điều kiện tạo phụ đề: đã có audio, chưa có phụ đề
+  const subtitlePending = outline.parts.filter(
+    (p) => audioIds[p.index] && !subtitles[p.index],
   ).length
 
   async function handleGenerateAll() {
@@ -431,6 +508,38 @@ export default function PartList() {
     abortAudioRef.current?.abort()
   }
 
+  async function handleSubtitleAll() {
+    if (!outline || subAllRunning) return
+    setSubAllRunning(true)
+    cancelSubRef.current = false
+    dispatch({ type: 'SET_ERROR', message: null })
+    try {
+      for (const part of outline.parts) {
+        if (cancelSubRef.current) break
+        const aid = audioIds[part.index]
+        if (!aid || subtitles[part.index]) continue
+
+        setSubAllPart(part.index)
+        try {
+          const res = await generateSubtitle({ audioId: aid, language: config.language })
+          dispatch({ type: 'SET_SUBTITLE', partIndex: part.index, srt: res.srt })
+        } catch (err) {
+          if (cancelSubRef.current) break
+          const msg = err instanceof ApiError ? err.message : 'Subtitle generation failed'
+          dispatch({ type: 'SET_ERROR', message: `${t.batchFailedAt} ${part.index}: ${msg}` })
+          break
+        }
+      }
+    } finally {
+      setSubAllPart(null)
+      setSubAllRunning(false)
+    }
+  }
+
+  function handleCancelSubtitleAll() {
+    cancelSubRef.current = true
+  }
+
   async function handleDownloadAll() {
     if (!outline || downloadingAll) return
     setDownloadingAll(true)
@@ -469,6 +578,7 @@ export default function PartList() {
             <span>{totalParts} {t.partsLabel} · {outline.total_minutes} {t.minLabel}</span>
             {doneScripts > 0 && <span style={{ color: 'var(--ok)' }}>{doneScripts}/{totalParts} {t.scriptsBadge}</span>}
             {doneAudio > 0 && <span style={{ color: 'var(--amber)' }}>{doneAudio}/{totalParts} {t.audioBadge}</span>}
+            {doneSubtitles > 0 && <span style={{ color: 'var(--ok)' }}>{doneSubtitles}/{totalParts} {t.subtitleBadge}</span>}
           </div>
         </div>
 
@@ -578,6 +688,51 @@ export default function PartList() {
               }}
             >
               {t.renderAllAudio}{audioPending > 0 ? ` (${audioPending})` : ''}
+            </button>
+          ))}
+
+          {/* Batch tạo phụ đề — chỉ hiện khi đã có ít nhất 1 audio */}
+          {doneAudio > 0 && subAllRunning && subAllPart !== null && (
+            <span style={{
+              fontSize: '0.75rem', color: 'var(--ok)', fontWeight: 600,
+              animation: 'pulse 1.5s ease-in-out infinite',
+              whiteSpace: 'nowrap',
+            }}>
+              {t.subtitlingPart} {subAllPart}/{totalParts}…
+            </span>
+          )}
+          {doneAudio > 0 && (subAllRunning ? (
+            <button
+              onClick={handleCancelSubtitleAll}
+              style={{
+                padding: '0.4375rem 0.875rem',
+                backgroundColor: 'rgba(224,82,82,0.12)',
+                border: '1px solid rgba(224,82,82,0.45)',
+                borderRadius: '6px',
+                color: '#e05252',
+                fontSize: '0.8125rem', fontWeight: 600,
+                cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              {t.cancelBtn}
+            </button>
+          ) : (
+            <button
+              onClick={handleSubtitleAll}
+              disabled={subtitlePending === 0}
+              title={subtitlePending === 0 ? t.allSubtitlesDone : undefined}
+              style={{
+                padding: '0.4375rem 0.875rem',
+                backgroundColor: subtitlePending === 0 ? 'var(--bg3)' : 'var(--bg3)',
+                border: `1px solid ${subtitlePending === 0 ? 'transparent' : 'var(--bd)'}`,
+                borderRadius: '6px',
+                color: subtitlePending === 0 ? 'var(--t3)' : 'var(--t1)',
+                fontSize: '0.8125rem', fontWeight: 600,
+                cursor: subtitlePending === 0 ? 'default' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t.genAllSubtitles}{subtitlePending > 0 ? ` (${subtitlePending})` : ''}
             </button>
           ))}
         </div>

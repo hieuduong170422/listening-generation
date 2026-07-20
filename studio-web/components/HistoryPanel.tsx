@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { fetchSubscription, fetchAudioBlobUrl, downloadAudioFile } from '@/lib/api'
+import { fetchSubscription, fetchAudioBlobUrl, downloadAudioFile, downloadTextFile } from '@/lib/api'
 import { useLang } from '@/lib/lang'
 import { useStudio } from '@/lib/store'
 import {
@@ -244,6 +244,7 @@ function FragmentRow({
                   title={part.title}
                   script={entry.scripts[part.index] ?? ''}
                   audioId={entry.audioIds[part.index] ?? ''}
+                  srt={entry.subtitles[part.index] ?? ''}
                 />
               ))}
             </div>
@@ -257,8 +258,8 @@ function FragmentRow({
 // ── 1 part trong lịch sử: xem script, nghe lại + tải audio ────────────────────
 
 function HistoryPartRow({
-  index, title, script, audioId,
-}: { index: number; title: string; script: string; audioId: string }) {
+  index, title, script, audioId, srt,
+}: { index: number; title: string; script: string; audioId: string; srt: string }) {
   const { t } = useLang()
   const [open, setOpen] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
@@ -268,7 +269,8 @@ function HistoryPartRow({
 
   const hasScript = Boolean(script)
   const hasAudio = Boolean(audioId)
-  const openable = hasScript || hasAudio
+  const hasSubtitle = Boolean(srt)
+  const openable = hasScript || hasAudio || hasSubtitle
 
   // Tải audio khi mở panel; thu hồi blob URL khi đóng/unmount
   useEffect(() => {
@@ -330,6 +332,7 @@ function HistoryPartRow({
         <span style={{ display: 'flex', gap: '0.375rem', flexShrink: 0, alignItems: 'center' }}>
           {hasScript && badge(t.scriptsBadge, 'var(--accent)', 'rgba(107,95,227,0.1)', 'rgba(107,95,227,0.2)')}
           {hasAudio && badge(t.audioBadge, 'var(--amber)', 'rgba(201,122,72,0.1)', 'rgba(201,122,72,0.2)')}
+          {hasSubtitle && badge(t.subtitleBadge, 'var(--ok)', 'rgba(90,170,120,0.12)', 'rgba(90,170,120,0.25)')}
           {hasAudio && (
             <button
               onClick={handleDownload}
@@ -343,6 +346,20 @@ function HistoryPartRow({
               }}
             >
               ⬇
+            </button>
+          )}
+          {hasSubtitle && (
+            <button
+              onClick={() => downloadTextFile(srt, `part-${String(index).padStart(2, '0')}.srt`)}
+              title={t.downloadSrt}
+              style={{
+                padding: '0.125rem 0.4375rem',
+                backgroundColor: 'var(--bg3)', border: '1px solid var(--bd)',
+                borderRadius: '4px', color: 'var(--t2)',
+                fontSize: '0.6875rem', cursor: 'pointer',
+              }}
+            >
+              .srt
             </button>
           )}
           {openable && (
@@ -387,6 +404,17 @@ function HistoryPartRow({
           )}
           {audioUrl && audioState === 'idle' && (
             <audio controls src={audioUrl} style={{ width: '100%', height: '34px', accentColor: 'var(--amber)' }} />
+          )}
+          {hasSubtitle && (
+            <pre style={{
+              margin: 0, fontFamily: 'ui-monospace, monospace', fontSize: '0.7rem',
+              color: 'var(--t3)', lineHeight: 1.5,
+              whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+              maxHeight: '160px', overflowY: 'auto',
+              borderTop: '1px solid var(--bd-s)', paddingTop: '0.5rem',
+            }}>
+              {srt}
+            </pre>
           )}
         </div>
       )}

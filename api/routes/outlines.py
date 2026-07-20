@@ -25,6 +25,7 @@ class OutlineEntryIn(BaseModel):
     outline: dict
     scripts: dict[str, str] = {}
     audio_ids: dict[str, str] = {}
+    subtitles: dict[str, str] = {}
 
 
 class OutlineListResponse(BaseModel):
@@ -67,6 +68,7 @@ def upsert_outline(
                 "outline": body.outline,
                 "scripts": body.scripts,
                 "audio_ids": body.audio_ids,
+                "subtitles": body.subtitles,
             },
         )
     except PermissionError:

@@ -12,6 +12,7 @@ export interface OutlineHistoryEntry {
   outline: Outline
   scripts: Record<number, string>
   audioIds: Record<number, string>
+  subtitles: Record<number, string>
 }
 
 interface ServerEntry {
@@ -23,6 +24,7 @@ interface ServerEntry {
   outline: Outline
   scripts?: Record<number, string>
   audio_ids?: Record<number, string>
+  subtitles?: Record<number, string>
 }
 
 function fromServer(e: ServerEntry): OutlineHistoryEntry {
@@ -35,6 +37,7 @@ function fromServer(e: ServerEntry): OutlineHistoryEntry {
     outline: e.outline,
     scripts: e.scripts ?? {},
     audioIds: e.audio_ids ?? {},
+    subtitles: e.subtitles ?? {},
   }
 }
 
@@ -56,6 +59,7 @@ export async function upsertOutlineEntry(entry: {
   outline: Outline
   scripts: Record<number, string>
   audioIds: Record<number, string>
+  subtitles: Record<number, string>
 }): Promise<void> {
   await authFetch('/api/podcast/outlines', {
     method: 'POST',
@@ -65,6 +69,7 @@ export async function upsertOutlineEntry(entry: {
       outline: entry.outline,
       scripts: entry.scripts,
       audio_ids: entry.audioIds,
+      subtitles: entry.subtitles,
     }),
   })
 }
