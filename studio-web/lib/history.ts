@@ -53,16 +53,21 @@ export async function fetchOutlineHistory(): Promise<{
   return { entries, isAdmin: Boolean(data.is_admin) }
 }
 
-export async function upsertOutlineEntry(entry: {
-  id: string
-  config: StudioConfig
-  outline: Outline
-  scripts: Record<number, string>
-  audioIds: Record<number, string>
-  subtitles: Record<number, string>
-}): Promise<void> {
+export async function upsertOutlineEntry(
+  entry: {
+    id: string
+    config: StudioConfig
+    outline: Outline
+    scripts: Record<number, string>
+    audioIds: Record<number, string>
+    subtitles: Record<number, string>
+  },
+  options: { keepalive?: boolean } = {},
+): Promise<void> {
   await authFetch('/api/podcast/outlines', {
     method: 'POST',
+    // keepalive: cho request sống sót khi tab đang đóng (flush lần cuối)
+    keepalive: options.keepalive,
     body: JSON.stringify({
       id: entry.id,
       config: entry.config,

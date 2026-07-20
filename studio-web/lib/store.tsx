@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useReducer,
+  useRef,
   type ReactNode,
   type Dispatch,
 } from 'react'
@@ -233,23 +234,46 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(id)
   }, [state.config, state.outline, state.outlineId, state.scripts, state.audioIds, state.selectedPart])
 
-  // Đồng bộ lịch sử dàn ý lên server (theo user, giữ 7 ngày) — fire-and-forget
+  // Đồng bộ lịch sử dàn ý lên server (theo user, giữ 7 ngày).
+  // Giữ snapshot mới nhất trong ref để flush được khi đóng tab.
+  const latestRef = useRef(state)
+  latestRef.current = state
+
+  function syncNow(opts: { keepalive?: boolean } = {}): void {
+    const s = latestRef.current
+    if (!s.outline || !s.outlineId) return
+    upsertOutlineEntry(
+      {
+        id: s.outlineId,
+        config: s.config,
+        outline: s.outline,
+        scripts: s.scripts,
+        audioIds: s.audioIds,
+        subtitles: s.subtitles,
+      },
+      opts,
+    ).catch((e) => console.error('Đồng bộ dàn ý lên server thất bại:', e))
+  }
+
   useEffect(() => {
     if (!state.outline || !state.outlineId) return
-    const outline = state.outline
-    const outlineId = state.outlineId
-    const id = window.setTimeout(() => {
-      upsertOutlineEntry({
-        id: outlineId,
-        config: state.config,
-        outline,
-        scripts: state.scripts,
-        audioIds: state.audioIds,
-        subtitles: state.subtitles,
-      }).catch(() => { /* offline/hết phiên — lần đổi kế tiếp sẽ sync lại */ })
-    }, REMOTE_SYNC_DEBOUNCE_MS)
+    const id = window.setTimeout(() => syncNow(), REMOTE_SYNC_DEBOUNCE_MS)
     return () => window.clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.config, state.outline, state.outlineId, state.scripts, state.audioIds, state.subtitles])
+
+  // Flush lần cuối khi đóng/ẩn tab — keepalive để request sống sót lúc unload
+  useEffect(() => {
+    function flush() { syncNow({ keepalive: true }) }
+    function onVisibility() { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('beforeunload', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <StudioContext.Provider value={{ state, dispatch }}>

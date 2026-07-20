@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useStudio } from '@/lib/store'
 import { useLang } from '@/lib/lang'
 import { fetchVoices, generateOutline, suggestTopics, ApiError } from '@/lib/api'
+import { upsertOutlineEntry } from '@/lib/history'
 import type { Voice, StudioConfig } from '@/lib/types'
 import VoicePicker from './VoicePicker'
 
@@ -122,6 +123,16 @@ export default function ConfigRail() {
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`
       dispatch({ type: 'SET_OUTLINE', outline: res.outline, outlineId })
+      // Lưu lên server NGAY khi vừa tạo — không chờ debounce, tránh mất nếu
+      // đóng tab / hết phiên trước khi effect kịp chạy.
+      upsertOutlineEntry({
+        id: outlineId,
+        config: cfg,
+        outline: res.outline,
+        scripts: {},
+        audioIds: {},
+        subtitles: {},
+      }).catch((e) => console.error('Lưu dàn ý lên server thất bại:', e))
     } catch (err) {
       dispatch({ type: 'SET_ERROR', message: err instanceof ApiError ? err.message : 'Outline generation failed' })
     } finally {
