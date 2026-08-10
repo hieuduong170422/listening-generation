@@ -68,6 +68,16 @@ def get_subscription() -> dict:
         headers=_el_headers(key),
         timeout=_TIMEOUT,
     )
+    if resp.status_code == 401:
+        # Key restricted (missing user_read permission) — trả về fallback thay vì crash
+        detail = resp.json().get("detail", {})
+        if isinstance(detail, dict) and detail.get("status") == "missing_permissions":
+            log.warning("ElevenLabs subscription: key thiếu quyền user_read — trả fallback")
+            return {"character_count": None, "character_limit": None, "tier": "restricted"}
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="ElevenLabs API key không hợp lệ",
+        )
     if resp.status_code != 200:
         log.error(
             "ElevenLabs GET /user/subscription failed [%d]: %s",
